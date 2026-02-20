@@ -1,0 +1,2 @@
+-keep class com.example.tweety.Tweety { *; }
+-keep class com.example.tweety.** { *; }

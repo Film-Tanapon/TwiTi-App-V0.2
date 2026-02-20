@@ -1,0 +1,111 @@
+import 'package:flutter/material.dart';
+import 'account_info_screen.dart';
+
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    const Color tweetyYellow = Color(0xFFFFF100);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Settings and Privacy',
+          style: TextStyle(
+            color: Colors.black, 
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+          ),
+        ),
+        backgroundColor: tweetyYellow, 
+        elevation: 0, 
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: Container(
+        color: Colors.white,
+        child: ListView(
+          children: [
+            _buildSectionTitle('Account'),
+            _buildSettingsItem(
+              Icons.person_outline, 
+              'Your account', 
+              'See information about your account',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const AccountInfoScreen()),
+                );
+              },
+            ),
+            _buildSettingsItem(Icons.vpn_key_outlined, 'Security and Account access', 'Manage your account\'s security'),
+            
+            const Divider(),
+            _buildSectionTitle('Privacy'),
+            _buildSettingsItem(Icons.lock_outline, 'Privacy and Safety', 'Manage what information you see and share'),
+            _buildSettingsItem(Icons.notifications_none, 'Notifications', 'Select the kinds of notifications you get'),
+            
+            const Divider(),
+            _buildSectionTitle('Support'),
+            _buildSettingsItem(Icons.help_outline, 'Help Center', null),
+            _buildSettingsItem(Icons.info_outline, 'About TwiTi', null),
+
+            // 🟢 เพิ่มส่วน Log out และ Version
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      // ใส่ Logic ออกจากระบบตรงนี้ เช่น ล้าง Token หรือกลับไปหน้า Login
+                      print("Logging out...");
+                    },
+                    child: const Text(
+                      'Log out',
+                      style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Tweety for Web v1.0.0',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
+
+  // 🛠 จุดที่แก้ไข: เชื่อมโยงค่า onTap ให้ทำงานจริง
+  Widget _buildSettingsItem(IconData icon, String title, String? subtitle, {VoidCallback? onTap}) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.black54),
+      title: Text(title, style: const TextStyle(fontSize: 16)),
+      subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 13)) : null,
+      trailing: const Icon(Icons.chevron_right, size: 20),
+      onTap: onTap, // ✅ แก้จาก () {} เป็น onTap
+    );
+  }
+}
