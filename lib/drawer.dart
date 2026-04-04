@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
-import 'profile_screen.dart'; // 1. ตรวจสอบว่านำเข้าไฟล์ ProfileScreen แล้ว
-import 'settings_screen.dart'; // อย่าลืมนำเข้าไฟล์ที่เพิ่งสร้าง
+import 'profile_screen.dart'; 
+import 'settings_screen.dart';
+import 'create_sub_account_screen.dart';
 
 class MyDrawer extends StatelessWidget {
   final String username;
   final String handle;
+  final String email;
   final int following;
   final int followers;
 
@@ -12,9 +14,9 @@ class MyDrawer extends StatelessWidget {
     super.key,
     required this.username,
     required this.handle,
+    required this.email,
     required this.following,
     required this.followers,
-
   });
 
   @override
@@ -24,7 +26,7 @@ class MyDrawer extends StatelessWidget {
     return Drawer(
       child: Column(
         children: [
-          // ส่วนหัวโปรไฟล์หลัก
+          // ส่วนหัวของ Drawer (User Profile Header)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.only(top: 60, left: 20, bottom: 20),
@@ -47,7 +49,7 @@ class MyDrawer extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '$handle',
+                  handle,
                   style: const TextStyle(color: Colors.black54, fontSize: 14),
                 ),
                 const SizedBox(height: 15),
@@ -63,37 +65,43 @@ class MyDrawer extends StatelessWidget {
             ),
           ),
 
-          // --- ส่วนรายการเมนู (Menu Items) ---
+          // รายการเมนูต่างๆ
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
               children: [
+                // ส่วนสำหรับจัดการโปรไฟล์อื่นๆ และสร้างโปรไฟล์ย่อย
                 ExpansionTile(
-                  leading: const Icon(Icons.person_outline, color: Colors.black),
+                  leading: const Icon(Icons.group_outlined, color: Colors.black),
                   title: const Text('Other Profile', style: TextStyle(color: Colors.black)),
                   children: [
                     ListTile(
-                      leading: const Icon(Icons.person_add_alt_1_outlined),
-                      title: const Text('Profile 1'),
-                      onTap: () {},
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.person_add_alt_1_outlined),
-                      title: const Text('Profile 2'),
-                      onTap: () {},
+                      leading: const Icon(Icons.add_circle_outline, color: Colors.blue),
+                      title: const Text(
+                        'Create New Profile',
+                        style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: const Text('Add a sub-account using this email'),
+                      onTap: () async {
+                        Navigator.pop(context); // ปิด Drawer ก่อนเปลี่ยนหน้า
+                        
+                        // นำทางไปหน้าสร้างโปรไฟล์ย่อย และรอรับผล (ถ้ามีการส่งค่ากลับมา)
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CreateSubAccountScreen(mainEmail: email),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
-                _buildMenuItem(Icons.bookmark_border, 'Bookmarks', () {
-                  // ใส่คำสั่งสำหรับ Bookmarks ตรงนี้
-                }),
-                _buildMenuItem(Icons.list_alt, 'Lists', () {
-                  // ใส่คำสั่งสำหรับ Lists ตรงนี้
-                }),
+
+                _buildMenuItem(Icons.bookmark_border, 'Bookmarks', () {}),
+                _buildMenuItem(Icons.list_alt, 'Lists', () {}),
                 
-                // --- แก้ไขตรงนี้: เมนู Profile ให้กดได้จริง ---
                 _buildMenuItem(Icons.person_outline, 'Profile', () {
-                  Navigator.pop(context); // ปิด Drawer ก่อนเปิดหน้าใหม่
+                  Navigator.pop(context); 
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -109,7 +117,7 @@ class MyDrawer extends StatelessWidget {
                 
                 const Divider(),
                 _buildMenuItem(Icons.settings_outlined, 'Settings and Privacy', () {
-                  Navigator.pop(context); // ปิด Drawer
+                  Navigator.pop(context); 
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const SettingsScreen()),
@@ -125,7 +133,7 @@ class MyDrawer extends StatelessWidget {
             leading: const Icon(Icons.logout, color: Colors.red),
             title: const Text('Logout', style: TextStyle(color: Colors.red)),
             onTap: () {
-              // เพิ่มคำสั่ง Logout
+              // เพิ่มฟังก์ชัน Logout ตรงนี้ในอนาคต
             },
           ),
         ],
@@ -133,12 +141,12 @@ class MyDrawer extends StatelessWidget {
     );
   }
 
-  // --- ปรับปรุงฟังก์ชันตัวช่วยให้รับค่า Function เพิ่มเติม ---
+  // Helper Widget สำหรับสร้างเมนู ListTile
   Widget _buildMenuItem(IconData icon, String title, VoidCallback onTap) {
     return ListTile(
       leading: Icon(icon, color: Colors.black),
       title: Text(title, style: const TextStyle(fontSize: 16)),
-      onTap: onTap, // นำคำสั่งมาใช้ที่นี่
+      onTap: onTap, 
     );
   }
 }

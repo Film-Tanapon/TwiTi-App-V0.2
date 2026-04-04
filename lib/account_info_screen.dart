@@ -1,8 +1,49 @@
 import 'package:flutter/material.dart';
-import 'settings_screen.dart';
+import 'package:http/http.dart' as http; // 1. import http
+import 'dart:convert'; // สำหรับแปลง json
 
-class AccountInfoScreen extends StatelessWidget {
+class AccountInfoScreen extends StatefulWidget {
   const AccountInfoScreen({super.key});
+
+  @override
+  State<AccountInfoScreen> createState() => _AccountInfoScreenState();
+}
+
+class _AccountInfoScreenState extends State<AccountInfoScreen> {
+  // สร้างตัวแปรเก็บข้อมูล (เริ่มต้นเป็น null หรือค่าว่าง)
+  Map<String, dynamic>? userData;
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    fetchUserData(); // 2. เรียกฟังก์ชันดึงข้อมูลเมื่อเปิดหน้าจอ
+  }
+
+  // 3. ฟังก์ชันดึงข้อมูลจาก Backend
+  Future<void> fetchUserData() async {
+    try {
+      // ใส่ URL ของ API Backend ของคุณที่นี่
+      final url = Uri.parse('https://api.example.com/user/profile'); 
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer YOUR_TOKEN_HERE'}, // ถ้ามีระบบ Login
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          userData = json.decode(response.body);
+          isLoading = false;
+        });
+      } else {
+        // จัดการกรณี Error
+        throw Exception('Failed to load user data');
+      }
+    } catch (e) {
+      print("Error: $e");
+      setState(() { isLoading = false; });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -11,65 +52,38 @@ class AccountInfoScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text(
-          'Account information', // หัวข้อภาษาอังกฤษ
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Account information', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: tweetyYellow,
-        elevation: 0,
         centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
       ),
-      body: ListView(
-        children: [
-          _buildInfoItem('Username', '@admin'),
-          _buildInfoItem('Phone', 'Add phone number'), // ตัวอย่างกรณีไม่มีข้อมูล
-          _buildInfoItem('Email', 'admin@gmail.com'),
-          _buildInfoItem('Verified', 'No'),
-          _buildInfoItem('Protected Posts', 'No'),
-          _buildInfoItem('Account Creation', '7 Apr 2025, 18:20:26'),
-          _buildInfoItem('Country', 'Thailand'),
-          _buildInfoItem('Languages', 'Thai, English, Japanese'),
-          _buildInfoItem('Gender', 'Male'),
-          _buildInfoItem('Birth Date', '14 Nov 2005'),
-          _buildInfoItem('Age', '20'),
-        ],
-      ),
+      // 4. แสดง Loading Spinner ขณะรอข้อมูล
+      body: isLoading 
+        ? const Center(child: CircularProgressIndicator()) 
+        : RefreshIndicator(
+            onRefresh: fetchUserData, // ลากลงเพื่อ Refresh ข้อมูลได้
+            child: ListView(
+              children: [
+                // 5. เอาข้อมูลจากตัวแปร userData มาแสดง
+                _buildInfoItem('Username', '@${userData?['username'] ?? 'n/a'}'),
+                _buildInfoItem('Email', userData?['email'] ?? 'n/a'),
+                _buildInfoItem('Phone', userData?['phone'] ?? 'Add phone number'),
+                _buildInfoItem('Country', userData?['country'] ?? 'Thailand'),
+                _buildInfoItem('Birth Date', userData?['birth_date'] ?? 'Not set'),
+              ],
+            ),
+          ),
     );
   }
 
-  // Widget สำหรับสร้างแต่ละแถวข้อมูลตามรูปแบบในรูปภาพที่ 2
   Widget _buildInfoItem(String title, String value) {
     return Column(
       children: [
         ListTile(
-          title: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black,
-            ),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 4.0),
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[700],
-              ),
-            ),
-          ),
-          trailing: const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
-          onTap: () {
-            // ใส่คำสั่งเมื่อกดเข้าไปแก้ไขข้อมูลแต่ละตัวได้ที่นี่
-          },
+          title: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          subtitle: Text(value, style: TextStyle(fontSize: 14, color: Colors.grey[700])),
+          trailing: const Icon(Icons.chevron_right, size: 20),
         ),
-        const Divider(height: 1, indent: 16), // เส้นคั่นบางๆ ตามสไตล์แอป
+        const Divider(height: 1, indent: 16),
       ],
     );
   }

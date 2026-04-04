@@ -19,6 +19,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   String myName = "TwiTi User";
   String myHandle = "TwiTi_official";
+  String myEmail = "user@example.com";
   int myFollowing = 120;
   int myFollowers = 5500;
 
@@ -29,6 +30,7 @@ class _SearchScreenState extends State<SearchScreen> {
       drawer: MyDrawer(
         username: myName,
         handle: myHandle,
+        email: myEmail,
         following: myFollowing,
         followers: myFollowers,
       ),

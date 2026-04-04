@@ -49,6 +49,7 @@ class _NotificationScreenState extends State<NotificationScreen> with SingleTick
       drawer: const MyDrawer(
         username: "TwiTi User",
         handle: "TwiTi_official",
+        email: "user@example.com",
         following: 120,
         followers: 5500,
       ),

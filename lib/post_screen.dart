@@ -28,6 +28,7 @@ class _PostScreenState extends State<PostScreen> {
   int myUserId = 0;
   String myName = "Loading...";
   String myHandle = "...";
+  String myEmail = "...";
   int myFollowing = 0;
   int myFollowers = 0;
 
@@ -55,6 +56,7 @@ class _PostScreenState extends State<PostScreen> {
   Future<void> _loadUserData() async {
     String? idStr = await _storage.read(key: 'user_id');
     String? name = await _storage.read(key: 'username');
+    String? emailStr = await _storage.read(key: 'email');
     String? handleStr = await _storage.read(key: 'handle');
     String? followingStr = await _storage.read(key: 'following');
     String? followersStr = await _storage.read(key: 'followers');
@@ -64,6 +66,7 @@ class _PostScreenState extends State<PostScreen> {
         myUserId = idStr != null ? int.parse(idStr) : 0;
         myName = name ?? "Tweety User";
         myHandle = handleStr ?? "tweety_official";
+        myEmail = emailStr ?? "user@example.com";
         myFollowing = followingStr != null ? int.parse(followingStr) : 0;
         myFollowers = followersStr != null ? int.parse(followersStr) : 0;
       });
@@ -397,7 +400,7 @@ class _PostScreenState extends State<PostScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      drawer: MyDrawer(username: myName, handle: myHandle, following: myFollowing, followers: myFollowers),
+      drawer: MyDrawer(username: myName, handle: myHandle, email: myEmail, following: myFollowing, followers: myFollowers),
       appBar: AppBar(
         backgroundColor: _tweetyYellow, elevation: 1,
         leading: Builder(builder: (context) => IconButton(icon: const Icon(Icons.person_outline, size: 28), onPressed: () => Scaffold.of(context).openDrawer())),

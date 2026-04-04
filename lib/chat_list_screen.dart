@@ -16,6 +16,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   // 2. กำหนดข้อมูลจำลองสำหรับส่งให้ Drawer (เหมือนหน้าอื่นๆ)
   String myName = "TwiTi User";
   String myHandle = "TwiTi_official";
+  String myEmail = "user@example.com";
   int myFollowing = 120;
   int myFollowers = 5500;
 
@@ -36,6 +37,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       drawer: MyDrawer(
         username: myName,
         handle: myHandle,
+        email: myEmail,
         following: myFollowing,
         followers: myFollowers,
     

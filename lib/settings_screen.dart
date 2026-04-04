@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'account_info_screen.dart';
+import 'security_settings_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -42,7 +43,19 @@ class SettingsScreen extends StatelessWidget {
                 );
               },
             ),
-            _buildSettingsItem(Icons.vpn_key_outlined, 'Security and Account access', 'Manage your account\'s security'),
+            _buildSettingsItem(
+              Icons.vpn_key_outlined,
+              'Security and Account access',
+              'Manage your account\'s security',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SecuritySettingsScreen(),
+                  ),
+                );
+              },
+            ),
             
             const Divider(),
             _buildSectionTitle('Privacy'),
