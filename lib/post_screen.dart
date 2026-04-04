@@ -32,6 +32,11 @@ class _PostScreenState extends State<PostScreen> {
   int myFollowing = 0;
   int myFollowers = 0;
 
+  // 🔴 จุดที่แก้ 1: เพิ่มตัวแปรเก็บสถานะ Like (ใสไว้ใต้ followers)
+  final Set<int> _likedPostIds = {};
+  final Set<int> _repostedIds = {};
+  final Set<int> _bookmarkedIds = {};
+
   Stream? _broadcastStream;
 
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -72,7 +77,6 @@ class _PostScreenState extends State<PostScreen> {
       });
     }
 
-    // 🟢 4. โหลดข้อมูลโปรไฟล์เสร็จแล้ว ค่อยเชื่อมต่อเซิร์ฟเวอร์
     _connectToServer();
 
     Future.delayed(const Duration(seconds: 3), () {
@@ -82,7 +86,6 @@ class _PostScreenState extends State<PostScreen> {
     });
   }
 
-  // ฟังก์ชันเลือกรูปภาพ
   Future<void> _pickImage(StateSetter setSheetState) async {
     final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
@@ -133,7 +136,6 @@ class _PostScreenState extends State<PostScreen> {
           });
         }
       } 
-      // 🟢 [เพิ่มใหม่] ส่วนรับข้อมูลเมื่อมีคนคอมเม้นท์เข้ามา
       else if (decoded['action'] == 'new_comment') {
         final commentData = decoded['data'];
         ScaffoldMessenger.of(context).showSnackBar(
@@ -145,7 +147,74 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
-  // ฟังก์ชันส่งโพสต์หลัก
+  // 🔴 จุดที่แก้ 2: เพิ่มฟังก์ชันส่ง Like ไป Server (ใส่ไว้ก่อน sendMessage)
+  void _toggleLike(int postId) {
+    setState(() {
+      if (_likedPostIds.contains(postId)) {
+        _likedPostIds.remove(postId);
+      } else {
+        _likedPostIds.add(postId);
+      }
+    });
+
+    final msg = {
+      'action': 'toggle_like',
+      'user_id': myUserId,
+      'post_id': postId,
+    };
+
+    try {
+      _channel?.sink.add(jsonEncode(msg));
+    } catch (e) {
+      print('Like Error: $e');
+    }
+  }
+
+  //Repost
+  void _toggleRepost(int postId) {
+    setState(() {
+      if (_repostedIds.contains(postId)) {
+        _repostedIds.remove(postId);
+      } else {
+        _repostedIds.add(postId);
+      }
+    });
+
+    final msg = {
+      'action': 'toggle_repost', // ตรวจสอบกับ Backend ว่าใช้ชื่อ action นี้หรือไม่
+      'user_id': myUserId,
+      'post_id': postId,
+    };
+
+    try {
+      _channel?.sink.add(jsonEncode(msg));
+    } catch (e) {
+      print('Repost Error: $e');
+    }
+  }
+
+  void _toggleBookmark(int postId) {
+    setState(() {
+      if (_bookmarkedIds.contains(postId)) {
+        _bookmarkedIds.remove(postId);
+      } else {
+        _bookmarkedIds.add(postId);
+      }
+    });
+
+    final msg = {
+      'action': 'toggle_bookmark', // ชื่อ action สำหรับ Backend
+      'user_id': myUserId,
+      'post_id': postId,
+    };
+
+    try {
+      _channel?.sink.add(jsonEncode(msg));
+    } catch (e) {
+      print('Bookmark Error: $e');
+    }
+  }
+
   void _sendMessage() {
     if (_textController.text.trim().isEmpty && _imageBytes == null) return;
     
@@ -170,14 +239,13 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
-  // 🟢 [เพิ่มใหม่] ฟังก์ชันส่งข้อมูลคอมเม้นท์ไปยัง Server
   void _sendComment(int postId) {
     if (_textController.text.trim().isEmpty && _imageBytes == null) return;
 
     final msg = {
-      'action': 'create_comment', // ระบุการกระทำว่าสร้างคอมเม้นท์
+      'action': 'create_comment',
       'user_id': myUserId,
-      'post_id': postId, // อ้างอิง ID ของโพสต์ที่จะคอมเม้นท์
+      'post_id': postId,
       'content': _textController.text.trim(),
       'image_urls': [],
     };
@@ -186,14 +254,13 @@ class _PostScreenState extends State<PostScreen> {
       _channel!.sink.add(jsonEncode(msg));
       _textController.clear();
       _imageBytes = null;
-      Navigator.pop(context); // ปิดหน้าต่างคอมเม้นท์
+      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ส่งคอมเม้นท์สำเร็จ!')));
     } catch (e) {
       print('Send Comment Error: $e');
     }
   }
 
-  // 🟢 [เพิ่มใหม่] ฟังก์ชันเปิดหน้าต่าง (BottomSheet) สำหรับเขียนคอมเม้นท์
   void _showCommentBottomSheet(Map<String, dynamic> parentPost) {
     _imageBytes = null;
     _textController.clear();
@@ -232,7 +299,6 @@ class _PostScreenState extends State<PostScreen> {
                 Expanded(
                   child: ListView(
                     children: [
-                      // ส่วนแสดงข้อมูลว่าเรากำลังตอบกลับใคร
                       Row(
                         children: [
                           const SizedBox(width: 45),
@@ -278,7 +344,6 @@ class _PostScreenState extends State<PostScreen> {
                     ],
                   ),
                 ),
-                // เครื่องมือเลือกรูป/วิดีโอ ในหน้าคอมเม้นท์
                 Container(
                   padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
                   child: Row(
@@ -304,7 +369,6 @@ class _PostScreenState extends State<PostScreen> {
     super.dispose();
   }
 
-  // หน้าต่างสร้างโพสต์หลัก
   void _showPostBottomSheet() {
     _imageBytes = null; 
     showModalBottomSheet(
@@ -448,7 +512,6 @@ class _PostScreenState extends State<PostScreen> {
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    // 🟢 [แก้ไข] เปลี่ยนจาก Icon เป็น IconButton เพื่อให้กดคอมเม้นท์ได้
                                     IconButton(
                                       icon: const Icon(Icons.chat_bubble_outline, size: 20, color: Colors.grey),
                                       onPressed: () {
@@ -459,16 +522,49 @@ class _PostScreenState extends State<PostScreen> {
                                               postData: msg,
                                               tweetyYellow: _tweetyYellow,
                                               channel: _channel,
-                                              broadcastStream: _broadcastStream, // ส่ง Stream ไปให้หน้าคอมเมนต์ฟังด้วย
+                                              broadcastStream: _broadcastStream,
                                               myUserId: myUserId,
                                             ),
                                           ),
                                         );
-                                      }, // เรียกเปิดหน้าคอมเม้นท์
+                                      }, 
                                     ),
-                                    const Icon(Icons.favorite_border, size: 20, color: Colors.grey),
-                                    const Icon(Icons.repeat, size: 20, color: Colors.grey),
-                                    const Icon(Icons.bookmark_border, size: 20, color: Colors.grey),
+                                    // 🔴 จุดที่แก้ 3: เปลี่ยนจาก Icon เป็น IconButton เพื่อให้กด Like ได้
+                                    IconButton(
+                                      icon: Icon(
+                                        _likedPostIds.contains(msg['post_id']) 
+                                            ? Icons.favorite 
+                                            : Icons.favorite_border,
+                                        size: 20,
+                                        color: _likedPostIds.contains(msg['post_id']) 
+                                            ? Colors.red 
+                                            : Colors.grey,
+                                      ),
+                                      onPressed: () => _toggleLike(msg['post_id'] ?? 0),
+                                    ),
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.repeat,
+                                        size: 20,
+                                        color: _repostedIds.contains(msg['post_id'])
+                                            ? Colors.green // เปลี่ยนเป็นสีเขียวเมื่อ Repost (แบบ X/Twitter)
+                                            : Colors.grey,
+                                      ),
+                                      onPressed: () =>
+                                          _toggleRepost(msg['post_id'] ?? 0),
+                                    ),
+                                    IconButton(
+                                      icon: Icon(
+                                        _bookmarkedIds.contains(msg['post_id']) 
+                                            ? Icons.bookmark 
+                                            : Icons.bookmark_border,
+                                        size: 20,
+                                        color: _bookmarkedIds.contains(msg['post_id']) 
+                                            ? Colors.blue // เปลี่ยนเป็นสีน้ำเงินเมื่อบันทึกแล้ว
+                                            : Colors.grey,
+                                      ),
+                                      onPressed: () => _toggleBookmark(msg['post_id'] ?? 0),
+                                    ),
                                     const Icon(Icons.ios_share, size: 20, color: Colors.grey),
                                   ],
                                 )

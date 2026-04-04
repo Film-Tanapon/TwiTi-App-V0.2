@@ -84,106 +84,120 @@ class _CreateSubAccountScreenState extends State<CreateSubAccountScreen> {
     );
   }
 
-  @override
+@override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.white, 
       appBar: AppBar(
         title: const Text(
           'Create New Profile',
           style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
         ),
-        backgroundColor: _tweetyYellow,
+        backgroundColor: _tweetyYellow, // ทำให้ AppBar กลมกลืน
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
-        elevation: 1,
       ),
-      body: SingleChildScrollView( // ป้องกัน Keyboard บังช่องกรอก
-        padding: const EdgeInsets.all(24.0),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 40.0, vertical: 20.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center, // จัดกลางเหมือนหน้า Sign In
           children: [
-            const Center(
-              child: CircleAvatar(
-                radius: 50,
-                backgroundColor: Colors.black,
-                child: Icon(Icons.person_add_alt_1, size: 45, color: Colors.white),
-              ),
+            const CircleAvatar(
+              radius: 50,
+              backgroundColor: Colors.black,
+              child: Icon(Icons.person_add_alt_1, size: 45, color: Colors.white),
             ),
             const SizedBox(height: 30),
 
-            // แสดงข้อมูล Account หลัก
+            // แสดงข้อมูล Account หลัก แบบโปร่งใสเข้ากับพื้นหลัง
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(10),
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: Colors.grey[200]!),
               ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('Linked Account', 
-                    style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
+                    style: TextStyle(color: Colors.black54, fontSize: 12, fontWeight: FontWeight.bold)),
                   Text(widget.mainEmail, 
-                    style: const TextStyle(fontSize: 15, color: Colors.black87)),
+                    style: const TextStyle(fontSize: 15, color: Colors.black, fontWeight: FontWeight.w500)),
                 ],
               ),
             ),
             const SizedBox(height: 25),
 
-            const Text('Username', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
+            // 2. ปรับช่อง Username เป็นสีขาวและมน
             TextField(
               controller: _usernameController,
               decoration: InputDecoration(
-                hintText: 'ชื่อโปรไฟล์ใหม่ของคุณ',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                hintText: 'Sub-Account Username',
+                filled: true,
+                fillColor: Colors.grey[50],
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 15,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
                 focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
                   borderSide: BorderSide(color: _tweetyYellow, width: 2),
-                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 15),
 
-            const Text('Handle (@)', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
+            // 3. ปรับช่อง Handle (@) ให้มี @ อยู่ตลอดและสไตล์เหมือนหน้า Sign In
             TextField(
               controller: _handleController,
               decoration: InputDecoration(
-                hintText: 'เช่น user_new_123',
-                prefixText: '@ ',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                hintText: 'handle name',
+                filled: true,
+                fillColor: Colors.grey[50],
+                prefixIcon: const Padding(
+                  padding: EdgeInsets.only(left: 20, right: 2),
+                  child: Text("@", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black54)),
+                ),
+                prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
+                contentPadding: const EdgeInsets.symmetric(vertical: 15),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                  borderSide: BorderSide(color: Colors.grey[300]!),
+                ),
                 focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
                   borderSide: BorderSide(color: _tweetyYellow, width: 2),
-                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
 
             const SizedBox(height: 40),
 
+            // 4. เปลี่ยนปุ่ม Confirm เป็นสีเขียว Tweety Green เหมือนปุ่ม Sign In
             SizedBox(
               width: double.infinity,
               height: 55,
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _createProfile,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _tweetyYellow,
+                  backgroundColor: _tweetyYellow, // สีเหลือง Tweety
                   foregroundColor: Colors.black,
                   elevation: 0,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                  disabledBackgroundColor: _tweetyYellow.withOpacity(0.5),
                 ),
                 child: _isLoading
                     ? const SizedBox(
-                        height: 24,
-                        width: 24,
-                        child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5),
+                        height: 24, width: 24,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
                       )
                     : const Text(
                         'Confirm and Create',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
               ),
             ),
