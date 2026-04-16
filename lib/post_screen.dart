@@ -32,11 +32,6 @@ class _PostScreenState extends State<PostScreen> {
   int myFollowing = 0;
   int myFollowers = 0;
 
-  // 🔴 จุดที่แก้ 1: เพิ่มตัวแปรเก็บสถานะ Like (ใสไว้ใต้ followers)
-  final Set<int> _likedPostIds = {};
-  final Set<int> _repostedIds = {};
-  final Set<int> _bookmarkedIds = {};
-
   Stream? _broadcastStream;
 
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -101,7 +96,7 @@ class _PostScreenState extends State<PostScreen> {
 
   void _connectToServer() async {
     try {
-      final wsUrl = Uri.parse('wss://tweety-server.onrender.com/ws');
+      final wsUrl = Uri.parse('ws://tweety-server.onrender.com/ws');
       _channel = WebSocketChannel.connect(wsUrl);
       print('✅ Connected to WebSocket Server on Render');
 
@@ -143,6 +138,11 @@ class _PostScreenState extends State<PostScreen> {
             _messages[index]['likes_count'] = data['likes_count'];
             _messages[index]['reposts_count'] = data['reposts_count'];
           }
+        } else if (action == 'post_history') {
+          _messages.clear();
+          for (var post in data) {
+            _messages.add(post);
+          }
         }
       });
     } catch (e) {
@@ -150,73 +150,7 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
-  // 🔴 จุดที่แก้ 2: เพิ่มฟังก์ชันส่ง Like ไป Server (ใส่ไว้ก่อน sendMessage)
-  void _toggleLike(int postId) {
-    setState(() {
-      int index = _messages.indexWhere((m) => m['post_id'] == postId);
-      if (index == -1) return;
-
-      if (_likedPostIds.contains(postId)) {
-        _likedPostIds.remove(postId);
-        _messages[index]['likes_count'] = (_messages[index]['likes_count'] ?? 1) - 1;
-      } else {
-        _likedPostIds.add(postId);
-        _messages[index]['likes_count'] = (_messages[index]['likes_count'] ?? 0) + 1;
-      }
-    });
-
-    _channel?.sink.add(jsonEncode({
-      'action': 'toggle_like',
-      'user_id': myUserId,
-      'post_id': postId,
-    }));
-  }
-
-  //function Repost
-  void _toggleRepost(int postId) {
-    setState(() {
-      int index = _messages.indexWhere((m) => m['post_id'] == postId);
-      if (index == -1) return;
-
-      if (_repostedIds.contains(postId)) {
-        _repostedIds.remove(postId);
-        _messages[index]['reposts_count'] = (_messages[index]['reposts_count'] ?? 1) - 1;
-      } else {
-        _repostedIds.add(postId);
-        _messages[index]['reposts_count'] = (_messages[index]['reposts_count'] ?? 0) + 1;
-      }
-    });
-
-    _channel?.sink.add(jsonEncode({
-      'action': 'toggle_repost',
-      'user_id': myUserId,
-      'post_id': postId,
-    }));
-  }
-
-  void _toggleBookmark(int postId) {
-    setState(() {
-      if (_bookmarkedIds.contains(postId)) {
-        _bookmarkedIds.remove(postId);
-      } else {
-        _bookmarkedIds.add(postId);
-      }
-    });
-
-    final msg = {
-      'action': 'toggle_bookmark', // ชื่อ action สำหรับ Backend
-      'user_id': myUserId,
-      'post_id': postId,
-    };
-
-    try {
-      _channel?.sink.add(jsonEncode(msg));
-    } catch (e) {
-      print('Bookmark Error: $e');
-    }
-  }
-
-  void _sendMessage() {
+  void _sendPost() {
     if (_textController.text.trim().isEmpty && _imageBytes == null) return;
 
     final msg = {
@@ -240,6 +174,76 @@ class _PostScreenState extends State<PostScreen> {
     } catch (e) {
       print('Send Error: $e');
     }
+  }
+
+  void _toggleLike(int postId) {
+    int index = _messages.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      bool isLiked = _messages[index]['is_liked'] ?? false;
+      if (isLiked) {
+        _messages[index]['is_liked'] = false;
+        _messages[index]['likes_count'] =
+            (_messages[index]['likes_count'] ?? 1) - 1;
+      } else {
+        _messages[index]['is_liked'] = true;
+        _messages[index]['likes_count'] =
+            (_messages[index]['likes_count'] ?? 0) + 1;
+      }
+    });
+
+    _channel!.sink.add(
+      jsonEncode({
+        'action': 'toggle_like',
+        'user_id': myUserId,
+        'post_id': postId,
+      }),
+    );
+  }
+
+  void _toggleRepost(int postId) {
+    int index = _messages.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      bool isReposted = _messages[index]['is_reposted'] ?? false;
+      if (isReposted) {
+        _messages[index]['is_reposted'] = false;
+        _messages[index]['reposts_count'] =
+            (_messages[index]['reposts_count'] ?? 1) - 1;
+      } else {
+        _messages[index]['is_reposted'] = true;
+        _messages[index]['reposts_count'] =
+            (_messages[index]['reposts_count'] ?? 0) + 1;
+      }
+    });
+
+    _channel!.sink.add(
+      jsonEncode({
+        'action': 'toggle_repost',
+        'user_id': myUserId,
+        'post_id': postId,
+      }),
+    );
+  }
+
+  void _toggleBookmark(int postId) {
+    int index = _messages.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      bool isBookmarked = _messages[index]['is_bookmarked'] ?? false;
+      _messages[index]['is_bookmarked'] = !isBookmarked;
+    });
+
+    _channel!.sink.add(
+      jsonEncode({
+        'action': 'toggle_bookmark',
+        'user_id': myUserId,
+        'post_id': postId,
+      }),
+    );
   }
 
   void _sendComment(int postId) {
@@ -475,7 +479,7 @@ class _PostScreenState extends State<PostScreen> {
                       ),
                     ),
                     ElevatedButton(
-                      onPressed: _sendMessage,
+                      onPressed: _sendPost,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _tweetyYellow,
                         foregroundColor: Colors.black,
@@ -723,16 +727,24 @@ class _PostScreenState extends State<PostScreen> {
                                       constraints: const BoxConstraints(),
                                       padding: EdgeInsets.zero,
                                       icon: Icon(
-                                        _likedPostIds.contains(msg['post_id']) ? Icons.favorite : Icons.favorite_border,
+                                        (msg['is_liked'] == true)
+                                            ? Icons.favorite
+                                            : Icons.favorite_border,
                                         size: 20,
-                                        color: _likedPostIds.contains(msg['post_id']) ? Colors.red : Colors.grey,
+                                        color: (msg['is_liked'] == true)
+                                            ? Colors.red
+                                            : Colors.grey,
                                       ),
-                                      onPressed: () => _toggleLike(msg['post_id'] ?? 0),
+                                      onPressed: () =>
+                                          _toggleLike(msg['post_id'] ?? 0),
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
                                       "${msg['likes_count'] ?? 0}",
-                                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -744,27 +756,31 @@ class _PostScreenState extends State<PostScreen> {
                                       icon: Icon(
                                         Icons.repeat,
                                         size: 20,
-                                        color: _repostedIds.contains(msg['post_id']) ? Colors.green : Colors.grey,
+                                        color: (msg['is_reposted'] == true)
+                                            ? Colors.green
+                                            : Colors.grey,
                                       ),
-                                      onPressed: () => _toggleRepost(msg['post_id'] ?? 0),
+                                      onPressed: () =>
+                                          _toggleRepost(msg['post_id'] ?? 0),
                                     ),
                                     const SizedBox(width: 4),
                                     Text(
                                       "${msg['reposts_count'] ?? 0}",
-                                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 12,
+                                      ),
                                     ),
                                   ],
                                 ),
                                 IconButton(
                                   icon: Icon(
-                                    _bookmarkedIds.contains(msg['post_id'])
+                                    (msg['is_bookmarked'] == true)
                                         ? Icons.bookmark
                                         : Icons.bookmark_border,
                                     size: 20,
-                                    color:
-                                        _bookmarkedIds.contains(msg['post_id'])
-                                        ? Colors
-                                              .blue // เปลี่ยนเป็นสีน้ำเงินเมื่อบันทึกแล้ว
+                                    color: (msg['is_bookmarked'] == true)
+                                        ? Colors.blue
                                         : Colors.grey,
                                   ),
                                   onPressed: () =>
