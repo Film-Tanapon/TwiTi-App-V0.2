@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'profile_screen.dart'; 
 import 'settings_screen.dart';
 import 'create_sub_account_screen.dart';
+import 'bookmarks_screen.dart';
 
 class MyDrawer extends StatelessWidget {
   final String username;
@@ -97,7 +98,13 @@ class MyDrawer extends StatelessWidget {
                   ],
                 ),
 
-                _buildMenuItem(Icons.bookmark_border, 'Bookmarks', () {}),
+                _buildMenuItem(Icons.bookmark_border, 'Bookmarks', () {
+                  Navigator.pop(context); // ปิด Drawer
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const BookmarksScreen()),
+                  );
+                }),
                 _buildMenuItem(Icons.list_alt, 'Lists', () {}),
                 
                 _buildMenuItem(Icons.person_outline, 'Profile', () {

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'account_info_screen.dart';
 import 'security_settings_screen.dart';
+import 'privacy_safety_screen.dart';
+import 'notifications_settings_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -59,8 +61,32 @@ class SettingsScreen extends StatelessWidget {
             
             const Divider(),
             _buildSectionTitle('Privacy'),
-            _buildSettingsItem(Icons.lock_outline, 'Privacy and Safety', 'Manage what information you see and share'),
-            _buildSettingsItem(Icons.notifications_none, 'Notifications', 'Select the kinds of notifications you get'),
+            _buildSettingsItem(
+              Icons.lock_outline, 
+              'Privacy and Safety', 
+              'Manage what information you see and share',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PrivacySafetyScreen(),
+                  ),
+                );
+              },
+            ),
+            _buildSettingsItem(
+              Icons.notifications_none, 
+              'Notifications', 
+              'Select the kinds of notifications you get',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const NotificationsSettingsScreen(),
+                  ),
+                );
+              },
+            ),
             
             const Divider(),
             _buildSectionTitle('Support'),
