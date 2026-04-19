@@ -53,12 +53,12 @@ class _SignInScreenState extends State<SignInScreen> {
 
     try {
       final channel = WebSocketChannel.connect(
-        Uri.parse('ws://tweety-server.onrender.com/ws'),
+        Uri.parse('ws://localhost:3000/ws'),
       );
 
       final request = {
         "action": "login",
-        "username": userInput, // ส่งค่าไปเช็คได้ทั้ง email และ username
+        "username": userInput,
         "password": passInput,
       };
       channel.sink.add(jsonEncode(request));

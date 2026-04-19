@@ -96,7 +96,7 @@ class _PostScreenState extends State<PostScreen> {
 
   void _connectToServer() async {
     try {
-      final wsUrl = Uri.parse('ws://tweety-server.onrender.com/ws');
+      final wsUrl = Uri.parse('ws://localhost:3000/ws');
       _channel = WebSocketChannel.connect(wsUrl);
       print('✅ Connected to WebSocket Server on Render');
 

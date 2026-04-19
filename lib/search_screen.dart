@@ -1,9 +1,21 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:async';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'post_utils.dart';
-import 'notification_screen.dart'; 
-import 'chat_list_screen.dart';    
-import 'drawer.dart'; 
-import 'post_screen.dart'; 
+import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:intl/intl.dart';
+
+// Import หน้าจออื่นๆ ของคุณ
+import 'drawer.dart';
+import 'post_screen.dart';
+import 'comment_screen.dart';
+import 'notification_screen.dart';
+import 'chat_list_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -13,179 +25,430 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  final List<String> _searchHistory = []; 
-  final TextEditingController _notiController = TextEditingController();
+  // --- 🛠️ Configuration & State ---
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+  final ImagePicker _picker = ImagePicker();
+  final TextEditingController _postController = TextEditingController();
+  
+  WebSocketChannel? _channel;
+  Uint8List? _imageBytes;
+
+  int myUserId = 0;
+  String myName = "Loading...";
+  String myHandle = "...";
+  String myEmail = "...";
+  int myFollowing = 0;
+  int myFollowers = 0;
+
+  final List<String> _searchHistory = [];
   final Color tweetyYellow = const Color(0xFFFFF100);
 
-  String myName = "TwiTi User";
-  String myHandle = "TwiTi_official";
-  String myEmail = "user@example.com";
-  int myFollowing = 120;
-  int myFollowers = 5500;
+  bool _isLoading = false;
+  bool _hasSearched = false;
+  List<dynamic> _userResults = [];
+  List<dynamic> _postResults = [];
 
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  // --- 🔒 Data Loading & WebSocket ---
+  Future<void> _loadUserData() async {
+    final results = await Future.wait([
+      _storage.read(key: 'user_id'),
+      _storage.read(key: 'username'),
+      _storage.read(key: 'email'),
+      _storage.read(key: 'handle'),
+      _storage.read(key: 'following'),
+      _storage.read(key: 'followers'),
+    ]);
+
+    if (mounted) {
+      setState(() {
+        myUserId = int.tryParse(results[0] ?? '0') ?? 0;
+        myName = results[1] ?? "Tweety User";
+        myEmail = results[2] ?? "user@example.com";
+        myHandle = results[3] ?? "tweety_official";
+        myFollowing = int.tryParse(results[4] ?? '0') ?? 0;
+        myFollowers = int.tryParse(results[5] ?? '0') ?? 0;
+      });
+      _connectToServer();
+    }
+  }
+
+  void _connectToServer() {
+    try {
+      final wsUrl = Uri.parse('ws://localhost:3000/ws');
+      _channel = WebSocketChannel.connect(wsUrl);
+      _channel!.sink.add(jsonEncode({
+        'action': 'register_connection',
+        'user_id': myUserId
+      }));
+    } catch (e) {
+      debugPrint('❌ WS Connection Error: $e');
+    }
+  }
+
+  // --- ⚡ Interactions (Like, Repost, Bookmark) ---
+  void _handleInteraction(int index, String action) {
+    final post = _postResults[index];
+    final postId = post['id'] ?? post['post_id']; // รองรับทั้ง id และ post_id
+
+    setState(() {
+      if (action == 'toggle_like') {
+        bool isLiked = post['is_liked'] ?? false;
+        _postResults[index]['is_liked'] = !isLiked;
+        _postResults[index]['likes_count'] = (post['likes_count'] ?? 0) + (isLiked ? -1 : 1);
+      } else if (action == 'toggle_repost') {
+        bool isReposted = post['is_reposted'] ?? false;
+        _postResults[index]['is_reposted'] = !isReposted;
+        _postResults[index]['reposts_count'] = (post['reposts_count'] ?? 0) + (isReposted ? -1 : 1);
+      } else if (action == 'toggle_bookmark') {
+        _postResults[index]['is_bookmarked'] = !(post['is_bookmarked'] ?? false);
+      }
+    });
+
+    final msg = {
+      'action': action, // 'toggle_like', 'toggle_repost', 'toggle_bookmark'
+      'user_id': myUserId,
+      'post_id': postId,
+    };
+
+    try {
+      _channel?.sink.add(jsonEncode(msg));
+    } catch (e) {
+      debugPrint('Interaction Error: $e');
+    }
+  }
+  
+  // --- 📸 Post Logic (เหมือน PostScreen) ---
+  Future<void> _pickImage(StateSetter setSheetState) async {
+    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      final bytes = await pickedFile.readAsBytes();
+      setSheetState(() => _imageBytes = bytes);
+    }
+  }
+
+  void _sendPost() {
+    if (_postController.text.trim().isEmpty && _imageBytes == null) return;
+    
+    final msg = {
+      'action': 'create_post',
+      'user_id': myUserId,
+      'username': myName,
+      'content': _postController.text.trim(),
+      'image_urls': [], // ถ้ามี Logic อัปโหลดรูปใส่ที่นี่
+    };
+
+    _channel?.sink.add(jsonEncode(msg));
+    _postController.clear();
+    _imageBytes = null;
+    Navigator.pop(context);
+  }
+
+  void _showPostBottomSheet() {
+    _imageBytes = null;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => Container(
+          height: MediaQuery.of(context).size.height * 0.85,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel', style: TextStyle(color: Colors.black, fontSize: 16)),
+                  ),
+                  ElevatedButton(
+                    onPressed: _sendPost,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: tweetyYellow,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      elevation: 0,
+                    ),
+                    child: const Text('Post', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              const Divider(),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const CircleAvatar(backgroundColor: Colors.black, child: Icon(Icons.person, color: Colors.white)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          TextField(
+                            controller: _postController,
+                            maxLines: null,
+                            decoration: const InputDecoration(
+                              hintText: "What's happening?",
+                              border: InputBorder.none,
+                            ),
+                            autofocus: true,
+                          ),
+                          if (_imageBytes != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(15),
+                                    child: Image.memory(_imageBytes!, fit: BoxFit.cover),
+                                  ),
+                                  Positioned(
+                                    right: 8, top: 8,
+                                    child: GestureDetector(
+                                      onTap: () => setSheetState(() => _imageBytes = null),
+                                      child: const CircleAvatar(backgroundColor: Colors.black54, radius: 15, child: Icon(Icons.close, size: 18, color: Colors.white)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+                child: Row(
+                  children: [
+                    IconButton(icon: const Icon(Icons.image_outlined, color: Colors.blue), onPressed: () => _pickImage(setSheetState)),
+                    IconButton(icon: const Icon(Icons.gif_box_outlined, color: Colors.blue), onPressed: () {}),
+                    IconButton(icon: const Icon(Icons.poll_outlined, color: Colors.blue), onPressed: () {}),
+                    IconButton(icon: const Icon(Icons.location_on_outlined, color: Colors.blue), onPressed: () {}),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- 🔍 Search Logic ---
+  Future<void> _performSearch(String keyword) async {
+    if (keyword.isEmpty) return;
+    setState(() { _isLoading = true; _hasSearched = true; });
+    if (!_searchHistory.contains(keyword)) _searchHistory.insert(0, keyword);
+
+    try {
+      String baseUrl = kIsWeb ? 'http://localhost:3000' : (Platform.isAndroid ? 'http://10.0.2.2:3000' : 'http://localhost:3000');
+      final response = await http.get(Uri.parse('$baseUrl/api/search?q=${Uri.encodeComponent(keyword)}'));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _userResults = data['users'] ?? [];
+          _postResults = data['posts'] ?? [];
+        });
+      }
+    } catch (e) {
+      debugPrint("Fetch error: $e");
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // --- 🖥️ UI Builders ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      drawer: MyDrawer(
-        username: myName,
-        handle: myHandle,
-        email: myEmail,
-        following: myFollowing,
-        followers: myFollowers,
-      ),
+      drawer: MyDrawer(username: myName, handle: myHandle, email: myEmail, following: myFollowing, followers: myFollowers),
       appBar: AppBar(
         backgroundColor: tweetyYellow,
         elevation: 0,
-        leading: Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.person_outline, color: Colors.black, size: 28),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
-        ),
+        leading: Builder(builder: (context) => IconButton(icon: const Icon(Icons.person_outline, color: Colors.black, size: 28), onPressed: () => Scaffold.of(context).openDrawer())),
         title: Container(
           height: 38,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-          ),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
           child: TextField(
             textAlignVertical: TextAlignVertical.center,
-            onSubmitted: (value) {
-              if (value.trim().isNotEmpty) {
-                setState(() {
-                  _searchHistory.insert(0, value.trim()); 
-                });
-              }
-            },
+            textInputAction: TextInputAction.search,
+            onSubmitted: (value) => _performSearch(value.trim()),
+            onChanged: (value) { if (value.isEmpty) setState(() => _hasSearched = false); },
             decoration: const InputDecoration(
-              hintText: 'Search...',
+              hintText: 'Search TwiTi...',
               hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
               prefixIcon: Icon(Icons.search, color: Colors.grey, size: 20),
-              isCollapsed: true,
               border: InputBorder.none,
-              contentPadding: EdgeInsets.zero, 
+              isCollapsed: true,
             ),
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_searchHistory.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text("Latest", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ),
-              SizedBox(
-                height: 85,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _searchHistory.length,
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12.0),
+      body: _isLoading ? const Center(child: CircularProgressIndicator()) : (!_hasSearched ? _buildDefaultBody() : _buildSearchResults()),
+      bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    return ListView(
+      children: [
+        if (_userResults.isNotEmpty) ...[
+          const Padding(padding: EdgeInsets.all(16.0), child: Text("Users", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          SizedBox(
+            height: 100,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _userResults.length,
+              itemBuilder: (context, index) {
+                final user = _userResults[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(
+                    children: [
+                      CircleAvatar(radius: 30, backgroundImage: (user['profile_image_url'] ?? '').isNotEmpty ? NetworkImage(user['profile_image_url']) : null, child: (user['profile_image_url'] ?? '').isEmpty ? const Icon(Icons.person) : null),
+                      Text(user['username'] ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const Divider(thickness: 4, color: Colors.black12),
+        ],
+        if (_postResults.isNotEmpty) ...[
+          const Padding(padding: EdgeInsets.all(16.0), child: Text("Posts", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _postResults.length,
+            separatorBuilder: (context, index) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final post = _postResults[index];
+              String formattedDate = '';
+              if (post['created_at'] != null) {
+                try {
+                  formattedDate = DateFormat('dd MMM, HH:mm').format(DateTime.parse(post['created_at']).toLocal());
+                } catch (e) { formattedDate = ''; }
+              }
+
+              return Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const CircleAvatar(backgroundColor: Colors.black, child: Icon(Icons.person, color: Colors.white, size: 20)),
+                    const SizedBox(width: 12),
+                    Expanded(
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const CircleAvatar(
-                            radius: 30,
-                            backgroundColor: Colors.black12,
-                            child: Icon(Icons.person, size: 40, color: Colors.grey),
+                          Row(
+                            children: [
+                              Text(post['username'] ?? 'User', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(width: 5),
+                              Text("@${post['username']?.toLowerCase()}", style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                              const Text(" · ", style: TextStyle(color: Colors.grey)),
+                              Text(formattedDate, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            ],
                           ),
-                          Text(_searchHistory[index], style: const TextStyle(fontSize: 12)),
+                          const SizedBox(height: 4),
+                          Text(post['content'] ?? '', style: const TextStyle(fontSize: 15, height: 1.3)),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              _buildActionIcon(Icons.chat_bubble_outline, post['comments_count'] ?? 0, () {
+                                Navigator.push(context, MaterialPageRoute(builder: (context) => CommentScreen(postData: post, tweetyYellow: tweetyYellow, channel: _channel, myUserId: myUserId)));
+                              }),
+                              _buildActionIcon(Icons.repeat, post['reposts_count'] ?? 0, () => _handleInteraction(index, 'repost_post')),
+                              _buildActionIcon(Icons.favorite_border, post['like_count'] ?? 0, () => _handleInteraction(index, 'like_post'), activeColor: Colors.pink),
+                              _buildActionIcon(Icons.bookmark_border, 0, () => _handleInteraction(index, 'bookmark_post')),
+                              const Icon(Icons.ios_share, size: 18, color: Colors.grey),
+                            ],
+                          ),
                         ],
                       ),
-                    );
-                  },
+                    ),
+                  ],
                 ),
-              ),
-            ],
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text("Trends", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
-            const Divider(height: 1),
-            for (int i = 1; i <= 6; i++) ...[
-              ListTile(
-                title: Text("# Trend $i", style: const TextStyle(fontWeight: FontWeight.w500)),
-                subtitle: const Text("Trending in Thailand"),
-                onTap: () {}, 
-              ),
-              const Divider(height: 1),
-            ],
-          ],
-        ),
-      ),
-      
-      // --- ส่วน BottomNavigationBar ที่แก้ไขใหม่ ---
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: tweetyYellow,
-          border: const Border(top: BorderSide(color: Colors.black12, width: 0.5)),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            // 1. ปุ่ม Home: ใช้ popUntil เพื่อล้าง stack และกลับหน้าแรก
-            IconButton(
-              icon: const Icon(Icons.home_outlined, size: 30, color: Colors.black54), 
-              onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-            ),
-            
-            // 2. ปุ่ม Search: เปลี่ยนเป็นไอคอนทึบ (Icons.search) และสีดำเข้ม
-            IconButton(
-              icon: const Icon(Icons.search, size: 30, color: Colors.black), 
-              onPressed: () {
-                // อยู่หน้านี้อยู่แล้ว ไม่ต้องทำอะไร
-              }
-            ),
-            
-            // 3. ปุ่มบวก
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline, size: 32, color: Colors.black54),
-              onPressed: () => showPostDialog(
-                context: context,
-                controller: _notiController,
-                onSend: () {
-                  _notiController.clear();
-                  Navigator.pop(context);
-                },
-                tweetyYellow: tweetyYellow,
-              ),
-            ),
-            
-            // 4. ปุ่มแจ้งเตือน: ใช้ pushReplacement เพื่อป้องกันหน้าซ้อน
-            IconButton(
-              icon: const Icon(Icons.notifications_outlined, size: 30, color: Colors.black54), 
-              onPressed: () {
-                Navigator.pushReplacement(
-                  context,
-                  PageRouteBuilder(
-                    pageBuilder: (context, anim1, anim2) => const NotificationScreen(),
-                    transitionDuration: Duration.zero,
-                  ),
-                );
-              }
-            ),
-            
-            // 5. ปุ่มกล่องจดหมาย: ใช้ pushReplacement เพื่อป้องกันหน้าซ้อน
-            IconButton(
-              icon: const Icon(Icons.mail_outline, size: 30, color: Colors.black54), 
-              onPressed: () {
-                Navigator.pushReplacement(
-                  context,
-                  PageRouteBuilder(
-                    pageBuilder: (context, anim1, anim2) => const ChatListScreen(),
-                    transitionDuration: Duration.zero,
-                  ),
-                );
-              }
-            ),
-          ],
-        ),
+              );
+            },
+          ),
+        ]
+      ],
+    );
+  }
+
+  Widget _buildActionIcon(IconData icon, int count, VoidCallback onTap, {Color? activeColor}) {
+    return InkWell(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.grey),
+          const SizedBox(width: 4),
+          if (count > 0) Text("$count", style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        ],
       ),
     );
+  }
+
+  Widget _buildDefaultBody() {
+    return ListView(
+      children: [
+        if (_searchHistory.isNotEmpty) ...[
+          const Padding(padding: EdgeInsets.all(16.0), child: Text("Recent Search", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          for (var item in _searchHistory.take(3))
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: Text(item),
+              onTap: () => _performSearch(item),
+            ),
+        ],
+        const Padding(padding: EdgeInsets.all(16.0), child: Text("Trends for you", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+        for (int i = 1; i <= 5; i++)
+          ListTile(
+            title: Text("#Trend_Topic_$i", style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: const Text("1,234 Posts"),
+            trailing: const Icon(Icons.more_horiz),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildBottomNavigationBar() {
+    return Container(
+      decoration: BoxDecoration(color: tweetyYellow, border: const Border(top: BorderSide(color: Colors.black12, width: 0.5))),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          IconButton(icon: const Icon(Icons.home_outlined, size: 28), onPressed: () => Navigator.pop(context)),
+          IconButton(icon: const Icon(Icons.search, size: 28, color: Colors.black), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.add_circle_outline, size: 30), onPressed: _showPostBottomSheet),
+          IconButton(icon: const Icon(Icons.notifications_outlined, size: 28), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationScreen()))),
+          IconButton(icon: const Icon(Icons.mail_outline, size: 28), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ChatListScreen()))),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _channel?.sink.close();
+    _postController.dispose();
+    super.dispose();
   }
 }
