@@ -9,6 +9,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../providers/user_provider.dart';
 
 // Import หน้าจออื่นๆ ของคุณ
 import 'drawer.dart';
@@ -29,8 +31,9 @@ class _SearchScreenState extends State<SearchScreen> {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   final ImagePicker _picker = ImagePicker();
   final TextEditingController _postController = TextEditingController();
-  
+
   WebSocketChannel? _channel;
+  Stream? _broadcastStream;
   Uint8List? _imageBytes;
 
   int myUserId = 0;
@@ -45,8 +48,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
   bool _isLoading = false;
   bool _hasSearched = false;
-  List<dynamic> _userResults = [];
-  List<dynamic> _postResults = [];
+  List<Map<String, dynamic>> _userResults = [];
+  final List<Map<String, dynamic>> _postResults = [];
 
   @override
   void initState() {
@@ -78,54 +81,129 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  void _connectToServer() {
+  void _connectToServer() async {
     try {
       final wsUrl = Uri.parse('ws://localhost:3000/ws');
       _channel = WebSocketChannel.connect(wsUrl);
-      _channel!.sink.add(jsonEncode({
-        'action': 'register_connection',
-        'user_id': myUserId
-      }));
+      debugPrint('✅ Connected to WebSocket Server on Render');
+
+      final regMsg = {'action': 'register_connection', 'user_id': myUserId};
+      _channel!.sink.add(jsonEncode(regMsg));
+
+      _broadcastStream = _channel!.stream.asBroadcastStream();
+      _broadcastStream!.listen(
+        (message) {
+          _handleIncomingData(message.toString());
+        },
+        onError: (error) => debugPrint('❌ WebSocket Error: $error'),
+        onDone: () => debugPrint('⚠️ WebSocket Closed'),
+      );
     } catch (e) {
-      debugPrint('❌ WS Connection Error: $e');
+      debugPrint('❌ Connection Error: $e');
     }
   }
 
-  // --- ⚡ Interactions (Like, Repost, Bookmark) ---
-  void _handleInteraction(int index, String action) {
-    final post = _postResults[index];
-    final postId = post['id'] ?? post['post_id']; // รองรับทั้ง id และ post_id
+  void _handleIncomingData(String jsonStr) {
+    try {
+      final decoded = jsonDecode(jsonStr);
+      final action = decoded['action'];
+      final data = decoded['data'];
+
+      setState(() {
+        if (action == 'new_post' && data['parent_post_id'] == null) {
+          _postResults.insert(0, Map<String, dynamic>.from(data));
+        }
+        // 🟢 เปลี่ยนมาเช็คและอัปเดตที่ _postResults แทน
+        if (action == 'update_post_stats') {
+          int index = _postResults.indexWhere(
+            (m) => m['post_id'] == data['post_id'],
+          );
+          if (index != -1) {
+            _postResults[index]['likes_count'] = data['likes_count'];
+            _postResults[index]['reposts_count'] = data['reposts_count'];
+          }
+        } 
+      });
+    } catch (e) {
+      debugPrint('JSON Parse Error: $e');
+    }
+  }
+
+  void _toggleLike(int postId) {
+    int index = _postResults.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
 
     setState(() {
-      if (action == 'toggle_like') {
-        bool isLiked = post['is_liked'] ?? false;
-        _postResults[index]['is_liked'] = !isLiked;
-        _postResults[index]['likes_count'] = (post['likes_count'] ?? 0) + (isLiked ? -1 : 1);
-      } else if (action == 'toggle_repost') {
-        bool isReposted = post['is_reposted'] ?? false;
-        _postResults[index]['is_reposted'] = !isReposted;
-        _postResults[index]['reposts_count'] = (post['reposts_count'] ?? 0) + (isReposted ? -1 : 1);
-      } else if (action == 'toggle_bookmark') {
-        _postResults[index]['is_bookmarked'] = !(post['is_bookmarked'] ?? false);
+      bool isLiked = _postResults[index]['is_liked'] ?? false;
+      if (isLiked) {
+        _postResults[index]['is_liked'] = false;
+        _postResults[index]['likes_count'] =
+            (_postResults[index]['likes_count'] ?? 1) - 1;
+      } else {
+        _postResults[index]['is_liked'] = true;
+        _postResults[index]['likes_count'] =
+            (_postResults[index]['likes_count'] ?? 0) + 1;
       }
     });
 
-    final msg = {
-      'action': action, // 'toggle_like', 'toggle_repost', 'toggle_bookmark'
-      'user_id': myUserId,
-      'post_id': postId,
-    };
-
-    try {
-      _channel?.sink.add(jsonEncode(msg));
-    } catch (e) {
-      debugPrint('Interaction Error: $e');
-    }
+    _channel!.sink.add(
+      jsonEncode({
+        'action': 'toggle_like',
+        'user_id': myUserId,
+        'post_id': postId,
+      }),
+    );
   }
-  
+
+  void _toggleRepost(int postId) {
+    int index = _postResults.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      bool isReposted = _postResults[index]['is_reposted'] ?? false;
+      if (isReposted) {
+        _postResults[index]['is_reposted'] = false;
+        _postResults[index]['reposts_count'] =
+            (_postResults[index]['reposts_count'] ?? 1) - 1;
+      } else {
+        _postResults[index]['is_reposted'] = true;
+        _postResults[index]['reposts_count'] =
+            (_postResults[index]['reposts_count'] ?? 0) + 1;
+      }
+    });
+
+    _channel!.sink.add(
+      jsonEncode({
+        'action': 'toggle_repost',
+        'user_id': myUserId,
+        'post_id': postId,
+      }),
+    );
+  }
+
+  void _toggleBookmark(int postId) {
+    int index = _postResults.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      bool isBookmarked = _postResults[index]['is_bookmarked'] ?? false;
+      _postResults[index]['is_bookmarked'] = !isBookmarked;
+    });
+
+    _channel!.sink.add(
+      jsonEncode({
+        'action': 'toggle_bookmark',
+        'user_id': myUserId,
+        'post_id': postId,
+      }),
+    );
+  }
+
   // --- 📸 Post Logic (เหมือน PostScreen) ---
   Future<void> _pickImage(StateSetter setSheetState) async {
-    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    final XFile? pickedFile = await _picker.pickImage(
+      source: ImageSource.gallery,
+    );
     if (pickedFile != null) {
       final bytes = await pickedFile.readAsBytes();
       setSheetState(() => _imageBytes = bytes);
@@ -134,7 +212,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _sendPost() {
     if (_postController.text.trim().isEmpty && _imageBytes == null) return;
-    
+
     final msg = {
       'action': 'create_post',
       'user_id': myUserId,
@@ -170,17 +248,25 @@ class _SearchScreenState extends State<SearchScreen> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel', style: TextStyle(color: Colors.black, fontSize: 16)),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(color: Colors.black, fontSize: 16),
+                    ),
                   ),
                   ElevatedButton(
                     onPressed: _sendPost,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: tweetyYellow,
                       foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
                       elevation: 0,
                     ),
-                    child: const Text('Post', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'Post',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ],
               ),
@@ -189,7 +275,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const CircleAvatar(backgroundColor: Colors.black, child: Icon(Icons.person, color: Colors.white)),
+                    const CircleAvatar(
+                      backgroundColor: Colors.black,
+                      child: Icon(Icons.person, color: Colors.white),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: ListView(
@@ -210,13 +299,27 @@ class _SearchScreenState extends State<SearchScreen> {
                                 children: [
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(15),
-                                    child: Image.memory(_imageBytes!, fit: BoxFit.cover),
+                                    child: Image.memory(
+                                      _imageBytes!,
+                                      fit: BoxFit.cover,
+                                    ),
                                   ),
                                   Positioned(
-                                    right: 8, top: 8,
+                                    right: 8,
+                                    top: 8,
                                     child: GestureDetector(
-                                      onTap: () => setSheetState(() => _imageBytes = null),
-                                      child: const CircleAvatar(backgroundColor: Colors.black54, radius: 15, child: Icon(Icons.close, size: 18, color: Colors.white)),
+                                      onTap: () => setSheetState(
+                                        () => _imageBytes = null,
+                                      ),
+                                      child: const CircleAvatar(
+                                        backgroundColor: Colors.black54,
+                                        radius: 15,
+                                        child: Icon(
+                                          Icons.close,
+                                          size: 18,
+                                          color: Colors.white,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -229,13 +332,36 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
               Padding(
-                padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
                 child: Row(
                   children: [
-                    IconButton(icon: const Icon(Icons.image_outlined, color: Colors.blue), onPressed: () => _pickImage(setSheetState)),
-                    IconButton(icon: const Icon(Icons.gif_box_outlined, color: Colors.blue), onPressed: () {}),
-                    IconButton(icon: const Icon(Icons.poll_outlined, color: Colors.blue), onPressed: () {}),
-                    IconButton(icon: const Icon(Icons.location_on_outlined, color: Colors.blue), onPressed: () {}),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.image_outlined,
+                        color: Colors.blue,
+                      ),
+                      onPressed: () => _pickImage(setSheetState),
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.gif_box_outlined,
+                        color: Colors.blue,
+                      ),
+                      onPressed: () {},
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.poll_outlined, color: Colors.blue),
+                      onPressed: () {},
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.location_on_outlined,
+                        color: Colors.blue,
+                      ),
+                      onPressed: () {},
+                    ),
                   ],
                 ),
               ),
@@ -249,17 +375,29 @@ class _SearchScreenState extends State<SearchScreen> {
   // --- 🔍 Search Logic ---
   Future<void> _performSearch(String keyword) async {
     if (keyword.isEmpty) return;
-    setState(() { _isLoading = true; _hasSearched = true; });
+    setState(() {
+      _isLoading = true;
+      _hasSearched = true;
+    });
     if (!_searchHistory.contains(keyword)) _searchHistory.insert(0, keyword);
 
     try {
-      String baseUrl = kIsWeb ? 'http://localhost:3000' : (Platform.isAndroid ? 'http://10.0.2.2:3000' : 'http://localhost:3000');
-      final response = await http.get(Uri.parse('$baseUrl/api/search?q=${Uri.encodeComponent(keyword)}'));
+      String baseUrl = kIsWeb
+          ? 'http://localhost:3000'
+          : (Platform.isAndroid
+                ? 'http://10.0.2.2:3000'
+                : 'http://localhost:3000');
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/search?q=${Uri.encodeComponent(keyword)}&userID=$myUserId'),
+      );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         setState(() {
-          _userResults = data['users'] ?? [];
-          _postResults = data['posts'] ?? [];
+          _userResults = List<Map<String, dynamic>>.from(data['users'] ?? []);
+          _postResults.clear();
+          for (var post in data['posts'] ?? []) {
+            _postResults.add(Map<String, dynamic>.from(post));
+          }
         });
       }
     } catch (e) {
@@ -272,21 +410,44 @@ class _SearchScreenState extends State<SearchScreen> {
   // --- 🖥️ UI Builders ---
   @override
   Widget build(BuildContext context) {
+    final userProvider = Provider.of<UserProvider>(context);
+    final myUserId = userProvider.userId ?? 0;
+
     return Scaffold(
       backgroundColor: Colors.white,
-      drawer: MyDrawer(username: myName, handle: myHandle, email: myEmail, following: myFollowing, followers: myFollowers),
+      drawer: MyDrawer(
+        username: myName,
+        handle: myHandle,
+        email: myEmail,
+        following: myFollowing,
+        followers: myFollowers,
+      ),
       appBar: AppBar(
         backgroundColor: tweetyYellow,
         elevation: 0,
-        leading: Builder(builder: (context) => IconButton(icon: const Icon(Icons.person_outline, color: Colors.black, size: 28), onPressed: () => Scaffold.of(context).openDrawer())),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(
+              Icons.person_outline,
+              color: Colors.black,
+              size: 28,
+            ),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
         title: Container(
           height: 38,
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: TextField(
             textAlignVertical: TextAlignVertical.center,
             textInputAction: TextInputAction.search,
             onSubmitted: (value) => _performSearch(value.trim()),
-            onChanged: (value) { if (value.isEmpty) setState(() => _hasSearched = false); },
+            onChanged: (value) {
+              if (value.isEmpty) setState(() => _hasSearched = false);
+            },
             decoration: const InputDecoration(
               hintText: 'Search TwiTi...',
               hintStyle: TextStyle(color: Colors.grey, fontSize: 14),
@@ -297,7 +458,9 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
       ),
-      body: _isLoading ? const Center(child: CircularProgressIndicator()) : (!_hasSearched ? _buildDefaultBody() : _buildSearchResults()),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : (!_hasSearched ? _buildDefaultBody() : _buildSearchResults()),
       bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
@@ -306,7 +469,13 @@ class _SearchScreenState extends State<SearchScreen> {
     return ListView(
       children: [
         if (_userResults.isNotEmpty) ...[
-          const Padding(padding: EdgeInsets.all(16.0), child: Text("Users", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              "Users",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
           SizedBox(
             height: 100,
             child: ListView.builder(
@@ -318,8 +487,23 @@ class _SearchScreenState extends State<SearchScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Column(
                     children: [
-                      CircleAvatar(radius: 30, backgroundImage: (user['profile_image_url'] ?? '').isNotEmpty ? NetworkImage(user['profile_image_url']) : null, child: (user['profile_image_url'] ?? '').isEmpty ? const Icon(Icons.person) : null),
-                      Text(user['username'] ?? '', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundImage:
+                            (user['profile_image_url'] ?? '').isNotEmpty
+                            ? NetworkImage(user['profile_image_url'])
+                            : null,
+                        child: (user['profile_image_url'] ?? '').isEmpty
+                            ? const Icon(Icons.person)
+                            : null,
+                      ),
+                      Text(
+                        user['username'] ?? '',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -329,7 +513,13 @@ class _SearchScreenState extends State<SearchScreen> {
           const Divider(thickness: 4, color: Colors.black12),
         ],
         if (_postResults.isNotEmpty) ...[
-          const Padding(padding: EdgeInsets.all(16.0), child: Text("Posts", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              "Posts",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -340,8 +530,15 @@ class _SearchScreenState extends State<SearchScreen> {
               String formattedDate = '';
               if (post['created_at'] != null) {
                 try {
-                  formattedDate = DateFormat('dd MMM, HH:mm').format(DateTime.parse(post['created_at']).toLocal());
-                } catch (e) { formattedDate = ''; }
+                  DateTime parsedDate = DateTime.parse(
+                    post['created_at'],
+                  ).toLocal();
+                  formattedDate = DateFormat(
+                    'dd MMM, HH:mm',
+                  ).format(parsedDate);
+                } catch (e) {
+                  formattedDate = 'Unknown Time';
+                }
               }
 
               return Padding(
@@ -349,34 +546,141 @@ class _SearchScreenState extends State<SearchScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const CircleAvatar(backgroundColor: Colors.black, child: Icon(Icons.person, color: Colors.white, size: 20)),
+                    const CircleAvatar(
+                      backgroundColor: Colors.black,
+                      child: Icon(Icons.person, color: Colors.white),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // ส่วนหัว: ชื่อผู้ใช้ และ วันที่
                           Row(
                             children: [
-                              Text(post['username'] ?? 'User', style: const TextStyle(fontWeight: FontWeight.bold)),
-                              const SizedBox(width: 5),
-                              Text("@${post['username']?.toLowerCase()}", style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                              const Text(" · ", style: TextStyle(color: Colors.grey)),
-                              Text(formattedDate, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                              Text(
+                                post['username'] ?? 'User',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                formattedDate,
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 4),
-                          Text(post['content'] ?? '', style: const TextStyle(fontSize: 15, height: 1.3)),
+                          // เนื้อหาโพสต์
+                          Text(
+                            post['content'] ?? '',
+                            style: const TextStyle(fontSize: 15),
+                          ),
                           const SizedBox(height: 12),
+                          // ส่วนปุ่ม Interactions
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              _buildActionIcon(Icons.chat_bubble_outline, post['comments_count'] ?? 0, () {
-                                Navigator.push(context, MaterialPageRoute(builder: (context) => CommentScreen(postData: post, tweetyYellow: tweetyYellow, channel: _channel, myUserId: myUserId)));
-                              }),
-                              _buildActionIcon(Icons.repeat, post['reposts_count'] ?? 0, () => _handleInteraction(index, 'repost_post')),
-                              _buildActionIcon(Icons.favorite_border, post['like_count'] ?? 0, () => _handleInteraction(index, 'like_post'), activeColor: Colors.pink),
-                              _buildActionIcon(Icons.bookmark_border, 0, () => _handleInteraction(index, 'bookmark_post')),
-                              const Icon(Icons.ios_share, size: 18, color: Colors.grey),
+                              // ปุ่ม Comment
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.chat_bubble_outline,
+                                  size: 20,
+                                  color: Colors.grey,
+                                ),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => CommentScreen(
+                                        postData: post,
+                                        tweetyYellow: tweetyYellow,
+                                        channel: _channel,
+                                        broadcastStream: _broadcastStream,
+                                        myUserId: myUserId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              // ปุ่ม Like
+                              Row(
+                                children: [
+                                  IconButton(
+                                    constraints: const BoxConstraints(),
+                                    padding: EdgeInsets.zero,
+                                    icon: Icon(
+                                      (post['is_liked'] == true)
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      size: 20,
+                                      color: (post['is_liked'] == true)
+                                          ? Colors.red
+                                          : Colors.grey,
+                                    ),
+                                    onPressed: () =>
+                                        _toggleLike(post['post_id'] ?? 0),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    "${post['likes_count'] ?? post['like_count'] ?? 0}",
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              // ปุ่ม Repost
+                              Row(
+                                children: [
+                                  IconButton(
+                                    constraints: const BoxConstraints(),
+                                    padding: EdgeInsets.zero,
+                                    icon: Icon(
+                                      Icons.repeat,
+                                      size: 20,
+                                      color: (post['is_reposted'] == true)
+                                          ? Colors.green
+                                          : Colors.grey,
+                                    ),
+                                    onPressed: () =>
+                                        _toggleRepost(post['post_id'] ?? 0),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    "${post['reposts_count'] ?? 0}",
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              // ปุ่ม Bookmark
+                              IconButton(
+                                icon: Icon(
+                                  (post['is_bookmarked'] == true)
+                                      ? Icons.bookmark
+                                      : Icons.bookmark_border,
+                                  size: 20,
+                                  color: (post['is_bookmarked'] == true)
+                                      ? Colors.blue
+                                      : Colors.grey,
+                                ),
+                                onPressed: () =>
+                                    _toggleBookmark(post['post_id'] ?? 0),
+                              ),
+                              // ปุ่ม Share
+                              const Icon(
+                                Icons.ios_share,
+                                size: 20,
+                                color: Colors.grey,
+                              ),
                             ],
                           ),
                         ],
@@ -387,21 +691,8 @@ class _SearchScreenState extends State<SearchScreen> {
               );
             },
           ),
-        ]
-      ],
-    );
-  }
-
-  Widget _buildActionIcon(IconData icon, int count, VoidCallback onTap, {Color? activeColor}) {
-    return InkWell(
-      onTap: onTap,
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: Colors.grey),
-          const SizedBox(width: 4),
-          if (count > 0) Text("$count", style: const TextStyle(color: Colors.grey, fontSize: 12)),
         ],
-      ),
+      ],
     );
   }
 
@@ -409,7 +700,13 @@ class _SearchScreenState extends State<SearchScreen> {
     return ListView(
       children: [
         if (_searchHistory.isNotEmpty) ...[
-          const Padding(padding: EdgeInsets.all(16.0), child: Text("Recent Search", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text(
+              "Recent Search",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
           for (var item in _searchHistory.take(3))
             ListTile(
               leading: const Icon(Icons.history),
@@ -417,10 +714,19 @@ class _SearchScreenState extends State<SearchScreen> {
               onTap: () => _performSearch(item),
             ),
         ],
-        const Padding(padding: EdgeInsets.all(16.0), child: Text("Trends for you", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+        const Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Text(
+            "Trends for you",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ),
         for (int i = 1; i <= 5; i++)
           ListTile(
-            title: Text("#Trend_Topic_$i", style: const TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(
+              "#Trend_Topic_$i",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             subtitle: const Text("1,234 Posts"),
             trailing: const Icon(Icons.more_horiz),
           ),
@@ -430,16 +736,54 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildBottomNavigationBar() {
     return Container(
-      decoration: BoxDecoration(color: tweetyYellow, border: const Border(top: BorderSide(color: Colors.black12, width: 0.5))),
+      decoration: BoxDecoration(
+        color: tweetyYellow,
+        border: const Border(
+          top: BorderSide(color: Colors.black12, width: 0.5),
+        ),
+      ),
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          IconButton(icon: const Icon(Icons.home_outlined, size: 28), onPressed: () => Navigator.pop(context)),
-          IconButton(icon: const Icon(Icons.search, size: 28, color: Colors.black), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.add_circle_outline, size: 30), onPressed: _showPostBottomSheet),
-          IconButton(icon: const Icon(Icons.notifications_outlined, size: 28), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationScreen()))),
-          IconButton(icon: const Icon(Icons.mail_outline, size: 28), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ChatListScreen()))),
+          IconButton(
+            icon: const Icon(Icons.home_outlined, size: 28),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const PostScreen(),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.search, size: 28, color: Colors.black),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const SearchScreen(),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline, size: 30),
+            onPressed: _showPostBottomSheet,
+          ),
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined, size: 28),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const NotificationScreen(),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.mail_outline, size: 28),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ChatListScreen()),
+            ),
+          ),
         ],
       ),
     );

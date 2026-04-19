@@ -1,11 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'providers/user_provider.dart';
 import 'package:flutter/services.dart';
-import 'routes/app_routes.dart'; // <--- เพิ่มบรรทัดนี้
+import 'routes/app_routes.dart';
 
 void main() {
+  // 1. ตั้งค่าระบบก่อน
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  runApp(const MyApp());
+
+  // 2. เรียก runApp แค่ครั้งเดียว โดยมี Provider หุ้ม MyApp ไว้
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => UserProvider(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -13,15 +23,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp( // เอา Sizer ออกก่อนก็ได้ครับถ้ายังไม่ได้ลง Library Sizer
+    return MaterialApp( 
       title: 'Tweety App',
       debugShowCheckedModeBanner: false,
-      
-      // --- ส่วนสำคัญที่ต้องแก้ ---
-      initialRoute: AppRoutes.introScreen, // เริ่มต้นที่หน้า Intro
-      routes: AppRoutes.routes,            // แผนที่การเดินทาง
-      // -----------------------
-      
+      initialRoute: AppRoutes.introScreen, 
+      routes: AppRoutes.routes,            
     );
   }
 }

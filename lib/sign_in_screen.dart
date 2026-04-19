@@ -2,6 +2,8 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:provider/provider.dart';
+import '../providers/user_provider.dart';
 import 'dart:convert';
 import 'dart:async';
 
@@ -71,23 +73,27 @@ class _SignInScreenState extends State<SignInScreen> {
           if (jsonResponse.containsKey('jwt') && jsonResponse['jwt'] != null) {
             await _storage.write(key: 'jwt_token', value: jsonResponse['jwt']);
 
-            if (jsonResponse['user_id'] != null) {
-              await _storage.write(
-                key: 'user_id',
-                value: jsonResponse['user_id'].toString(),
-              );
+            final userId = jsonResponse['user_id'] ?? jsonResponse['id'] ?? 0; 
+            final username = jsonResponse['username'] ?? "Unknown";
+
+            if (userId != 0) {
+              await _storage.write(key: 'user_id', value: userId.toString());
             }
-            if (jsonResponse['username'] != null) {
-              await _storage.write(
-                key: 'username',
-                value: jsonResponse['username'].toString(),
-              );
+            if (username != "Unknown") {
+              await _storage.write(key: 'username', value: username.toString());
             }
 
             channel.sink.close();
 
             if (mounted) {
+              // เซ็ตค่าลง Provider โดยใช้ตัวแปรที่เช็คแล้วด้านบน
+              Provider.of<UserProvider>(context, listen: false).setUser(
+                int.parse(userId.toString()), 
+                username.toString(),
+              );
+
               setState(() => _isLoading = false);
+              
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (context) => const PostScreen()),
