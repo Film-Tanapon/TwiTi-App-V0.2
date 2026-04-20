@@ -1,176 +1,503 @@
-import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:intl/intl.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
+  final int targetUserId;
   final String username;
   final String handle;
   final int following;
   final int followers;
-  // --- เพิ่มตัวแปรสำหรับรับรายการโพสต์ ---
-  //final List<Map<String, dynamic>> userPosts;
 
   const ProfileScreen({
     super.key,
+    required this.targetUserId,
     required this.username,
     required this.handle,
     required this.following,
     required this.followers,
-    //required this.userPosts, // บังคับให้ส่งค่ามา
   });
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  WebSocketChannel? _channel;
+  // เปลี่ยนเป็น List<Map<String, dynamic>> เพื่อให้แก้ไข state ได้
+  List<Map<String, dynamic>> _ownPosts = [];
+  List<Map<String, dynamic>> _reposts = [];
+  List<Map<String, dynamic>> _favorites = [];
+  int myUserId = 0;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    const storage = FlutterSecureStorage();
+    String? idStr = await storage.read(key: 'user_id');
+    myUserId = int.tryParse(idStr ?? '0') ?? 0;
+
+    _channel = WebSocketChannel.connect(Uri.parse('ws://localhost:3000/ws'));
+
+    _channel?.sink.add(jsonEncode({
+      "action": "fetch_profile_data",
+      "user_id": myUserId,
+      "target_user_id": widget.targetUserId,
+    }));
+
+    _channel?.stream.listen((message) {
+      final data = jsonDecode(message);
+      debugPrint("DEBUG DATA: $data");
+
+      if (data['action'] == 'profile_data_response') {
+        if (mounted) {
+          setState(() {
+            _ownPosts = List<Map<String, dynamic>>.from(
+              (data['posts'] ?? []).map((e) => Map<String, dynamic>.from(e)),
+            );
+            _reposts = List<Map<String, dynamic>>.from(
+              (data['reposts'] ?? []).map((e) => Map<String, dynamic>.from(e)),
+            );
+            _favorites = List<Map<String, dynamic>>.from(
+              (data['favorites'] ?? []).map((e) => Map<String, dynamic>.from(e)),
+            );
+            _isLoading = false;
+          });
+        }
+      }
+
+      // รับ update stats realtime จาก broadcast (เช่น user อื่นกด like)
+      if (data['action'] == 'update_post_stats') {
+        final updatedData = data['data'];
+        if (updatedData == null) return;
+        if (mounted) {
+          setState(() {
+            _updatePostStats(_ownPosts, updatedData);
+            _updatePostStats(_reposts, updatedData);
+            _updatePostStats(_favorites, updatedData);
+          });
+        }
+      }
+    });
+  }
+
+  // Helper: อัปเดต like/repost count ใน list ใดก็ได้
+  void _updatePostStats(List<Map<String, dynamic>> list, dynamic updatedData) {
+    int index = list.indexWhere((m) => m['post_id'] == updatedData['post_id']);
+    if (index != -1) {
+      list[index]['likes_count'] = updatedData['likes_count'];
+      list[index]['reposts_count'] = updatedData['reposts_count'];
+    }
+  }
+
+  // --- Toggle Actions (เหมือน search_screen.dart) ---
+
+  void _toggleLike(List<Map<String, dynamic>> list, int postId) {
+    int index = list.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      bool isLiked = list[index]['is_liked'] == true;
+      list[index]['is_liked'] = !isLiked;
+      list[index]['likes_count'] =
+          ((list[index]['likes_count'] ?? 0) as int) + (isLiked ? -1 : 1);
+    });
+
+    _channel?.sink.add(jsonEncode({
+      'action': 'toggle_like',
+      'user_id': myUserId,
+      'post_id': postId,
+    }));
+  }
+
+  void _toggleRepost(List<Map<String, dynamic>> list, int postId) {
+    int index = list.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      bool isReposted = list[index]['is_reposted'] == true;
+      list[index]['is_reposted'] = !isReposted;
+      list[index]['reposts_count'] =
+          ((list[index]['reposts_count'] ?? 0) as int) + (isReposted ? -1 : 1);
+    });
+
+    _channel?.sink.add(jsonEncode({
+      'action': 'toggle_repost',
+      'user_id': myUserId,
+      'post_id': postId,
+    }));
+  }
+
+  void _toggleBookmark(List<Map<String, dynamic>> list, int postId) {
+    int index = list.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      list[index]['is_bookmarked'] = !(list[index]['is_bookmarked'] == true);
+    });
+
+    _channel?.sink.add(jsonEncode({
+      'action': 'toggle_bookmark',
+      'user_id': myUserId,
+      'post_id': postId,
+    }));
+  }
+
+  @override
+  void dispose() {
+    _channel?.sink.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     const Color tweetyYellow = Color(0xFFFFF100);
 
-    // กรองเอาเฉพาะโพสต์ที่เป็นของ User คนนี้ (ป้องกันกรณีในหน้า Feed มีโพสต์คนอื่น)
-    //final myOwnPosts = userPosts.where((post) => post['username'] == username).toList();
-
     return DefaultTabController(
-      length: 4,
+      length: 3,
       child: Scaffold(
         backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: tweetyYellow,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: () => Navigator.pop(context),
-          ),
-          actions: [
-            IconButton(icon: const Icon(Icons.search, color: Colors.black), onPressed: () {}),
-            IconButton(icon: const Icon(Icons.edit_outlined, color: Colors.black), onPressed: () {}),
-          ],
-        ),
-        body: Column(
-          children: [
-            // --- ส่วน Header (เหมือนเดิมของคุณ) ---
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(height: 60, color: tweetyYellow),
-                Positioned(
-                  top: 10,
-                  left: 20,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 4),
-                    ),
-                    child: const CircleAvatar(
-                      radius: 50,
-                      backgroundColor: Color(0xFFE1E1E1),
-                      child: Icon(Icons.person, size: 60, color: Colors.white),
+        body: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) {
+            return [
+              SliverAppBar(
+                expandedHeight: 320,
+                floating: false,
+                pinned: true,
+                backgroundColor: tweetyYellow,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.black),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Container(
+                    color: Colors.white,
+                    child: Column(
+                      children: [
+                        Container(height: 120, color: tweetyYellow),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 45),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        widget.username,
+                                        style: const TextStyle(
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      Text(
+                                        '@${widget.handle}',
+                                        style: const TextStyle(
+                                          color: Colors.grey,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  OutlinedButton(
+                                    onPressed: () {},
+                                    style: OutlinedButton.styleFrom(
+                                      shape: const StadiumBorder(),
+                                      side:
+                                          const BorderSide(color: Colors.grey),
+                                    ),
+                                    child: const Text(
+                                      'Edit profile',
+                                      style: TextStyle(color: Colors.black),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 15),
+                              Row(
+                                children: [
+                                  _buildStatText(
+                                    widget.following.toString(),
+                                    'Following',
+                                  ),
+                                  const SizedBox(width: 20),
+                                  _buildStatText(
+                                    widget.followers.toString(),
+                                    'Followers',
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 60),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(username, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                  Text('@$handle', style: const TextStyle(color: Colors.grey)),
-                  const SizedBox(height: 10),
-                  const Text("-bio-", style: TextStyle(fontSize: 16)),
-                  const SizedBox(height: 15),
-                  Row(
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(48),
+                  child: Stack(
+                    clipBehavior: Clip.none,
                     children: [
-                      Text('$following ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      const Text('Following    '),
-                      Text('$followers ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      const Text('Followers'),
+                      Container(
+                        color: Colors.white,
+                        child: const TabBar(
+                          labelColor: Colors.black,
+                          unselectedLabelColor: Colors.grey,
+                          indicatorColor: tweetyYellow,
+                          indicatorWeight: 3,
+                          tabs: [
+                            Tab(text: 'Posts'),
+                            Tab(text: 'Reposts'),
+                            Tab(text: 'Favorites'),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        top: -240,
+                        left: 20,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const CircleAvatar(
+                            radius: 40,
+                            backgroundColor: Colors.black,
+                            child:
+                                Icon(Icons.person, size: 50, color: Colors.white),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-
-            // --- TabBar ---
-            const TabBar(
-              labelColor: Colors.black,
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: tweetyYellow,
-              tabs: [
-                Tab(text: 'Post'),
-                Tab(text: 'Comment'),
-                Tab(text: 'Favorites'),
-                Tab(text: 'Media'),
-              ],
-            ),
-
-            // --- เนื้อหาใน Tab ---
-            /*Expanded(
-              child: TabBarView(
-                children: [
-                  _buildPostList(myOwnPosts), // ส่งโพสต์ที่กรองแล้วไปแสดง
-                  const Center(child: Text("No Comments yet")),
-                  const Center(child: Text("No Favorites yet")),
-                  const Center(child: Text("No Media yet")),
-                ],
-              ),
-            ),*/
-          ],
+            ];
+          },
+          body: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFFFFF100),
+                  ),
+                )
+              : TabBarView(
+                  children: [
+                    _buildPostList(_ownPosts),
+                    _buildPostList(_reposts),
+                    _buildPostList(_favorites),
+                  ],
+                ),
         ),
       ),
     );
   }
 
-  // --- ฟังก์ชันสร้างรายการโพสต์จากข้อมูลจริง ---
+  Widget _buildStatText(String count, String label) {
+    return Row(
+      children: [
+        Text(
+          count,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.grey, fontSize: 16),
+        ),
+      ],
+    );
+  }
+
+  // ส่ง list เข้ามาเพื่อให้ toggle action รู้ว่าต้องแก้ list ไหน
   Widget _buildPostList(List<Map<String, dynamic>> posts) {
     if (posts.isEmpty) {
-      return const Center(child: Text("You haven't posted anything yet."));
+      return const Center(
+        child: Text("No posts found", style: TextStyle(color: Colors.grey)),
+      );
     }
 
     return ListView.builder(
+      padding: EdgeInsets.zero,
       itemCount: posts.length,
       itemBuilder: (context, index) {
         final post = posts[index];
+        final int postId = post['post_id'] ?? 0;
+        final bool isLiked = post['is_liked'] == true;
+        final bool isReposted = post['is_reposted'] == true;
+        final bool isBookmarked = post['is_bookmarked'] == true;
+        final int likesCount = (post['likes_count'] ?? 0) as int;
+        final int repostsCount = (post['reposts_count'] ?? 0) as int;
+
+        // แสดงวันที่
+        String formattedDate = '';
+        if (post['created_at'] != null) {
+          try {
+            DateTime parsedDate =
+                DateTime.parse(post['created_at'].toString()).toLocal();
+            formattedDate = DateFormat('dd MMM, HH:mm').format(parsedDate);
+          } catch (_) {
+            formattedDate = '';
+          }
+        }
+
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ListTile(
-              leading: const CircleAvatar(backgroundColor: Colors.black, child: Icon(Icons.person, color: Colors.white)),
-              title: Row(
-                children: [
-                  Text(post['username'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 8),
-                  Text(post['date'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                ],
-              ),
-              subtitle: Column(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 4),
-                  Text(post['content'] ?? '', style: const TextStyle(color: Colors.black87, fontSize: 15)),
-                  // ถ้ามีรูปภาพให้แสดงรูปด้วย
-                  if (post['image'] != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.file(File(post['image']), fit: BoxFit.cover),
-                      ),
+                  // Avatar
+                  CircleAvatar(
+                    backgroundColor: Colors.black,
+                    backgroundImage:
+                        (post['profile_image_url'] ?? '').isNotEmpty
+                        ? NetworkImage(post['profile_image_url'])
+                        : null,
+                    child: (post['profile_image_url'] ?? '').isEmpty
+                        ? const Icon(Icons.person,
+                            color: Colors.white, size: 25)
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ชื่อ + วันที่
+                        Row(
+                          children: [
+                            Text(
+                              post['username'] ?? widget.username,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              formattedDate,
+                              style: TextStyle(
+                                  color: Colors.grey[600], fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        // เนื้อหา
+                        Text(
+                          post['content'] ?? '',
+                          style: const TextStyle(fontSize: 15),
+                        ),
+                        // รูปภาพ (ถ้ามี)
+                        if (post['image_urls'] != null &&
+                            (post['image_urls'] as List).isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child:
+                                  Image.network(post['image_urls'][0]),
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        // ปุ่ม Interactions (เหมือน search_screen)
+                        Row(
+                          mainAxisAlignment:
+                              MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Comment (ไม่มี action ในหน้านี้)
+                            const Icon(Icons.chat_bubble_outline,
+                                size: 20, color: Colors.grey),
+
+                            // Like
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () => _toggleLike(posts, postId),
+                                  child: Icon(
+                                    isLiked
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    size: 20,
+                                    color: isLiked
+                                        ? Colors.red
+                                        : Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$likesCount',
+                                  style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12),
+                                ),
+                              ],
+                            ),
+
+                            // Repost
+                            Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: () =>
+                                      _toggleRepost(posts, postId),
+                                  child: Icon(
+                                    Icons.repeat,
+                                    size: 20,
+                                    color: isReposted
+                                        ? Colors.green
+                                        : Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$repostsCount',
+                                  style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12),
+                                ),
+                              ],
+                            ),
+
+                            // Bookmark
+                            GestureDetector(
+                              onTap: () =>
+                                  _toggleBookmark(posts, postId),
+                              child: Icon(
+                                isBookmarked
+                                    ? Icons.bookmark
+                                    : Icons.bookmark_border,
+                                size: 20,
+                                color: isBookmarked
+                                    ? Colors.blue
+                                    : Colors.grey,
+                              ),
+                            ),
+
+                            // Share
+                            const Icon(Icons.ios_share,
+                                size: 20, color: Colors.grey),
+                          ],
+                        ),
+                      ],
                     ),
+                  ),
                 ],
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 60, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Icon(Icons.chat_bubble_outline, size: 18, color: Colors.grey),
-                  Icon(Icons.favorite_border, size: 18, color: Colors.grey),
-                  Icon(Icons.repeat, size: 18, color: Colors.grey),
-                  Icon(Icons.ios_share, size: 18, color: Colors.grey),
-                ],
-              ),
-            ),
-            const Divider(),
+            const Divider(height: 1),
           ],
         );
       },

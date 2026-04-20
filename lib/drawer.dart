@@ -5,6 +5,7 @@ import 'create_sub_account_screen.dart';
 import 'bookmarks_screen.dart';
 
 class MyDrawer extends StatelessWidget {
+  final int userId;
   final String username;
   final String handle;
   final String email;
@@ -13,6 +14,7 @@ class MyDrawer extends StatelessWidget {
 
   const MyDrawer({
     super.key,
+    required this.userId,
     required this.username,
     required this.handle,
     required this.email,
@@ -113,6 +115,7 @@ class MyDrawer extends StatelessWidget {
                     context,
                     MaterialPageRoute(
                       builder: (context) => ProfileScreen(
+                        targetUserId: userId ?? 0,
                         username: username,
                         handle: handle,
                         following: following,

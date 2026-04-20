@@ -1,4 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:intl/intl.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'profile_screen.dart';
 
 class BookmarksScreen extends StatefulWidget {
   const BookmarksScreen({super.key});
@@ -8,29 +13,137 @@ class BookmarksScreen extends StatefulWidget {
 }
 
 class _BookmarksScreenState extends State<BookmarksScreen> {
-  // สมมติข้อมูลโพสต์ที่ดึงมาจาก Database
-  List<Map<String, dynamic>> bookmarkPosts = List.generate(5, (index) => {
-    'post_id': index,
-    'user_name': 'User Name $index',
-    'handle': '@handle_$index',
-    'content': 'นี่คือข้อความที่ถูกบันทึกไว้ใน Bookmarks ของคุณ รายการที่ $index',
-    'likes': 20,
-    'reposts': 5,
-    'replies': 12,
-    'is_liked': false,
-    'is_reposted': false,
-    'is_bookmarked': true, // หน้า Bookmark ค่าเริ่มต้นควรเป็น true
-  });
+  WebSocketChannel? _channel;
+  List<Map<String, dynamic>> _bookmarkPosts = [];
+  int myUserId = 0;
+  String myHandle = '';
+  bool _isLoading = true;
 
-  // ฟังก์ชันสลับสถานะต่างๆ
-  void _toggleAction(int index, String field) {
-    setState(() {
-      bookmarkPosts[index][field] = !bookmarkPosts[index][field];
-      // ตัวอย่าง: ถ้ากด Like ก็เพิ่ม/ลดจำนวนเลขได้ตรงนี้
-      if (field == 'is_liked') {
-        bookmarkPosts[index]['likes'] += bookmarkPosts[index][field] ? 1 : -1;
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    const storage = FlutterSecureStorage();
+    final idStr = await storage.read(key: 'user_id');
+    final handle = await storage.read(key: 'handle') ?? '';
+    myUserId = int.tryParse(idStr ?? '0') ?? 0;
+    myHandle = handle;
+
+    _channel = WebSocketChannel.connect(Uri.parse('ws://localhost:3000/ws'));
+
+    // ส่ง action เพื่อดึง bookmarks
+    _channel?.sink.add(jsonEncode({
+      'action': 'fetch_bookmarks',
+      'user_id': myUserId,
+    }));
+
+    _channel?.stream.listen((message) {
+      final data = jsonDecode(message);
+
+      if (data['action'] == 'bookmarks_response') {
+        if (mounted) {
+          setState(() {
+            _bookmarkPosts = List<Map<String, dynamic>>.from(
+              (data['data'] ?? []).map((e) => Map<String, dynamic>.from(e)),
+            );
+            _isLoading = false;
+          });
+        }
+      }
+
+      // รับ update stats realtime (like/repost count)
+      if (data['action'] == 'update_post_stats') {
+        final updatedData = data['data'];
+        if (updatedData == null) return;
+        if (mounted) {
+          setState(() {
+            int idx = _bookmarkPosts.indexWhere(
+              (m) => m['post_id'] == updatedData['post_id'],
+            );
+            if (idx != -1) {
+              _bookmarkPosts[idx]['likes_count'] = updatedData['likes_count'];
+              _bookmarkPosts[idx]['reposts_count'] = updatedData['reposts_count'];
+            }
+          });
+        }
       }
     });
+  }
+
+  void _toggleLike(int postId) {
+    int index = _bookmarkPosts.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      bool isLiked = _bookmarkPosts[index]['is_liked'] == true;
+      _bookmarkPosts[index]['is_liked'] = !isLiked;
+      _bookmarkPosts[index]['likes_count'] =
+          ((_bookmarkPosts[index]['likes_count'] ?? 0) as int) + (isLiked ? -1 : 1);
+    });
+
+    _channel?.sink.add(jsonEncode({
+      'action': 'toggle_like',
+      'user_id': myUserId,
+      'post_id': postId,
+    }));
+  }
+
+  void _toggleRepost(int postId) {
+    int index = _bookmarkPosts.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    setState(() {
+      bool isReposted = _bookmarkPosts[index]['is_reposted'] == true;
+      _bookmarkPosts[index]['is_reposted'] = !isReposted;
+      _bookmarkPosts[index]['reposts_count'] =
+          ((_bookmarkPosts[index]['reposts_count'] ?? 0) as int) + (isReposted ? -1 : 1);
+    });
+
+    _channel?.sink.add(jsonEncode({
+      'action': 'toggle_repost',
+      'user_id': myUserId,
+      'post_id': postId,
+    }));
+  }
+
+  void _toggleBookmark(int postId) {
+    int index = _bookmarkPosts.indexWhere((m) => m['post_id'] == postId);
+    if (index == -1) return;
+
+    // เมื่อ un-bookmark ให้ลบออกจาก list ด้วย
+    setState(() {
+      _bookmarkPosts.removeAt(index);
+    });
+
+    _channel?.sink.add(jsonEncode({
+      'action': 'toggle_bookmark',
+      'user_id': myUserId,
+      'post_id': postId,
+    }));
+  }
+
+  void _navigateToProfile(Map<String, dynamic> post) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileScreen(
+          targetUserId: post['user_id'] ?? 0,
+          username: post['username'] ?? '',
+          handle: post['username'] ?? '',
+          following: 0,
+          followers: 0,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _channel?.sink.close();
+    super.dispose();
   }
 
   @override
@@ -39,10 +152,16 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Column(
+        title: Column(
           children: [
-            Text('Bookmarks', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
-            Text('@tweety_official', style: TextStyle(color: Colors.black54, fontSize: 12)),
+            const Text(
+              'Bookmarks',
+              style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            Text(
+              '@$myHandle',
+              style: const TextStyle(color: Colors.black54, fontSize: 12),
+            ),
           ],
         ),
         backgroundColor: tweetyYellow,
@@ -52,71 +171,144 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Container(
-        color: Colors.white,
-        child: ListView.separated(
-          itemCount: bookmarkPosts.length,
-          separatorBuilder: (context, index) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final post = bookmarkPosts[index];
-            return _buildBookmarkItem(post, index);
-          },
-        ),
-      ),
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFFFFF100)),
+            )
+          : _bookmarkPosts.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.bookmark_border, size: 60, color: Colors.grey),
+                      SizedBox(height: 12),
+                      Text(
+                        'ยังไม่มี Bookmark',
+                        style: TextStyle(color: Colors.grey, fontSize: 16),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'กดไอคอน Bookmark ที่โพสต์เพื่อบันทึกไว้ที่นี่',
+                        style: TextStyle(color: Colors.grey, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                )
+              : Container(
+                  color: Colors.white,
+                  child: ListView.separated(
+                    itemCount: _bookmarkPosts.length,
+                    separatorBuilder: (context, index) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final post = _bookmarkPosts[index];
+                      return _buildBookmarkItem(post, index);
+                    },
+                  ),
+                ),
     );
   }
 
   Widget _buildBookmarkItem(Map<String, dynamic> post, int index) {
+    final int postId = post['post_id'] ?? 0;
+    final bool isLiked = post['is_liked'] == true;
+    final bool isReposted = post['is_reposted'] == true;
+    final int likesCount = (post['likes_count'] ?? 0) as int;
+    final int repostsCount = (post['reposts_count'] ?? 0) as int;
+
+    String formattedDate = '';
+    if (post['created_at'] != null) {
+      try {
+        DateTime parsedDate = DateTime.parse(post['created_at'].toString()).toLocal();
+        formattedDate = DateFormat('dd MMM, HH:mm').format(parsedDate);
+      } catch (_) {}
+    }
+
+    final String profileImageUrl = post['profile_image_url'] ?? '';
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const CircleAvatar(backgroundColor: Colors.grey, child: Icon(Icons.person, color: Colors.white)),
+          // ✅ กดรูปโปรไฟล์ → ไปหน้า ProfileScreen
+          GestureDetector(
+            onTap: () => _navigateToProfile(post),
+            child: CircleAvatar(
+              backgroundColor: Colors.black,
+              backgroundImage: profileImageUrl.isNotEmpty
+                  ? NetworkImage(profileImageUrl)
+                  : null,
+              child: profileImageUrl.isEmpty
+                  ? const Icon(Icons.person, color: Colors.white)
+                  : null,
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ชื่อผู้ใช้ + วันที่ (กดชื่อไปโปรไฟล์ได้ด้วย)
                 Row(
                   children: [
-                    Text(post['user_name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 4),
-                    Text('${post['handle']} · 2h', style: const TextStyle(color: Colors.grey)),
+                    GestureDetector(
+                      onTap: () => _navigateToProfile(post),
+                      child: Text(
+                        post['username'] ?? '',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      formattedDate,
+                      style: const TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
                   ],
                 ),
-                Text(post['content'], style: const TextStyle(fontSize: 15)),
+                const SizedBox(height: 4),
+                Text(post['content'] ?? '', style: const TextStyle(fontSize: 15)),
+
+                // รูปภาพ (ถ้ามี)
+                if (post['image_urls'] != null &&
+                    (post['image_urls'] as List).isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(post['image_urls'][0]),
+                    ),
+                  ),
                 const SizedBox(height: 8),
-                
-                // --- ส่วนปุ่มกดต่างๆ ---
+
+                // ปุ่ม Interactions
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Reply
-                    _buildIconButton(Icons.chat_bubble_outline, post['replies'].toString(), Colors.grey, () {}),
-                    
-                    // 1. Like
+                    // Reply (ยังไม่มี action)
+                    _buildIconButton(Icons.chat_bubble_outline, '', Colors.grey, () {}),
+
+                    // Like
                     _buildIconButton(
-                      post['is_liked'] ? Icons.favorite : Icons.favorite_border,
-                      post['likes'].toString(),
-                      post['is_liked'] ? Colors.red : Colors.grey,
-                      () => _toggleAction(index, 'is_liked'),
+                      isLiked ? Icons.favorite : Icons.favorite_border,
+                      '$likesCount',
+                      isLiked ? Colors.red : Colors.grey,
+                      () => _toggleLike(postId),
                     ),
 
-                    // 2. Repost
+                    // Repost
                     _buildIconButton(
                       Icons.repeat,
-                      post['reposts'].toString(),
-                      post['is_reposted'] ? Colors.green : Colors.grey,
-                      () => _toggleAction(index, 'is_reposted'),
+                      '$repostsCount',
+                      isReposted ? Colors.green : Colors.grey,
+                      () => _toggleRepost(postId),
                     ),
 
-                    // 3. Bookmark
+                    // Bookmark — กด un-bookmark จะลบออกจากหน้านี้
                     _buildIconButton(
-                      post['is_bookmarked'] ? Icons.bookmark : Icons.bookmark_border,
+                      Icons.bookmark, // หน้านี้ค่าเริ่มต้น bookmark อยู่เสมอ
                       '',
-                      post['is_bookmarked'] ? Colors.blue : Colors.grey,
-                      () => _toggleAction(index, 'is_bookmarked'),
+                      Colors.blue,
+                      () => _toggleBookmark(postId),
                     ),
 
                     // Share
@@ -131,7 +323,6 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     );
   }
 
-  // Helper สำหรับสร้างปุ่มที่มี Text ต่อท้าย
   Widget _buildIconButton(IconData icon, String label, Color color, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,

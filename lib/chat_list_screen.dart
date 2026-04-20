@@ -13,7 +13,7 @@ class ChatListScreen extends StatefulWidget {
 }
 
 class _ChatListScreenState extends State<ChatListScreen> {
-  // 2. กำหนดข้อมูลจำลองสำหรับส่งให้ Drawer (เหมือนหน้าอื่นๆ)
+  int myUserID = 0;
   String myName = "TwiTi User";
   String myHandle = "TwiTi_official";
   String myEmail = "user@example.com";
@@ -35,6 +35,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       
       // 3. เพิ่ม MyDrawer เข้าไปใน Scaffold
       drawer: MyDrawer(
+        userId: myUserID,
         username: myName,
         handle: myHandle,
         email: myEmail,

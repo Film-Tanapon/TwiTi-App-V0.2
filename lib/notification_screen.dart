@@ -47,6 +47,7 @@ class _NotificationScreenState extends State<NotificationScreen> with SingleTick
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: const MyDrawer(
+        userId: 0,
         username: "TwiTi User",
         handle: "TwiTi_official",
         email: "user@example.com",

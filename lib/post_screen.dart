@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'drawer.dart';
+import 'profile_screen.dart';
 import 'search_screen.dart';
 import 'notification_screen.dart';
 import 'chat_list_screen.dart';
@@ -608,6 +609,7 @@ class _PostScreenState extends State<PostScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: MyDrawer(
+        userId: myUserId,
         username: myName,
         handle: myHandle,
         email: myEmail,
@@ -663,9 +665,31 @@ class _PostScreenState extends State<PostScreen> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const CircleAvatar(
-                        backgroundColor: Colors.black,
-                        child: Icon(Icons.person, color: Colors.white),
+                      // ✅ กดรูปโปรไฟล์ → ไปหน้า ProfileScreen ของเจ้าของโพสต์
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ProfileScreen(
+                                targetUserId: msg['user_id'] ?? 0,
+                                username: msg['username'] ?? '',
+                                handle: msg['username'] ?? '',
+                                following: 0,
+                                followers: 0,
+                              ),
+                            ),
+                          );
+                        },
+                        child: CircleAvatar(
+                          backgroundColor: Colors.black,
+                          backgroundImage: (msg['profile_image_url'] ?? '').isNotEmpty
+                              ? NetworkImage(msg['profile_image_url'])
+                              : null,
+                          child: (msg['profile_image_url'] ?? '').isEmpty
+                              ? const Icon(Icons.person, color: Colors.white)
+                              : null,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
