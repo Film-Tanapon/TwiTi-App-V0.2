@@ -3,6 +3,7 @@ import 'account_info_screen.dart';
 import 'security_settings_screen.dart';
 import 'privacy_safety_screen.dart';
 import 'notifications_settings_screen.dart';
+import 'sign_in_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -87,11 +88,6 @@ class SettingsScreen extends StatelessWidget {
                 );
               },
             ),
-            
-            const Divider(),
-            _buildSectionTitle('Support'),
-            _buildSettingsItem(Icons.help_outline, 'Help Center', null),
-            _buildSettingsItem(Icons.info_outline, 'About TwiTi', null),
 
             // 🟢 เพิ่มส่วน Log out และ Version
             const Divider(),
@@ -101,8 +97,16 @@ class SettingsScreen extends StatelessWidget {
                 children: [
                   TextButton(
                     onPressed: () {
-                      // ใส่ Logic ออกจากระบบตรงนี้ เช่น ล้าง Token หรือกลับไปหน้า Login
                       print("Logging out...");
+                      // ใช้ pushAndRemoveUntil เพื่อล้างประวัติการกด back กลับมาหน้าเดิม
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SignInScreen(),
+                        ),
+                        (route) =>
+                            false, // บรรทัดนี้คือการบอกว่า "ไม่ให้เหลือหน้าเก่าไว้เลย"
+                      );
                     },
                     child: const Text(
                       'Log out',
@@ -111,7 +115,7 @@ class SettingsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Tweety for Web v1.0.0',
+                    'TwiTi for Web v1.0.0',
                     style: TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                 ],
@@ -137,14 +141,14 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  // 🛠 จุดที่แก้ไข: เชื่อมโยงค่า onTap ให้ทำงานจริง
+  // จุดที่แก้ไข: เชื่อมโยงค่า onTap ให้ทำงานจริง
   Widget _buildSettingsItem(IconData icon, String title, String? subtitle, {VoidCallback? onTap}) {
     return ListTile(
       leading: Icon(icon, color: Colors.black54),
       title: Text(title, style: const TextStyle(fontSize: 16)),
       subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 13)) : null,
       trailing: const Icon(Icons.chevron_right, size: 20),
-      onTap: onTap, // ✅ แก้จาก () {} เป็น onTap
+      onTap: onTap, 
     );
   }
 }

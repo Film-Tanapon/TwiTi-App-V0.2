@@ -14,6 +14,7 @@ import '../providers/user_provider.dart';
 import 'profile_screen.dart';
 
 // Import หน้าจออื่นๆ ของคุณ
+import 'sign_in_screen.dart';
 import 'drawer.dart';
 import 'post_screen.dart';
 import 'comment_screen.dart';
@@ -419,12 +420,32 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: MyDrawer(
-        userId: myUserId,
+        userId: myUserId, 
         username: myName,
-        handle: myHandle,
+        handle: myHandle, 
         email: myEmail,
-        following: myFollowing,
-        followers: myFollowers,
+        following: 120,
+        followers: 5500,
+        // เพิ่มฟังก์ชันสลับบัญชีที่นี่
+        onSwitchAccount: (targetAccount) async {
+          const storage = FlutterSecureStorage();
+          // 1. บันทึกข้อมูลบัญชีใหม่ลงใน Storage
+          await storage.write(key: 'user_id', value: targetAccount['user_id']);
+          await storage.write(key: 'username', value: targetAccount['username']);
+          await storage.write(key: 'email', value: targetAccount['email']);
+          await storage.write(key: 'handle', value: targetAccount['handle']);
+          await storage.write(key: 'following', value: targetAccount['following']);
+          await storage.write(key: 'followers', value: targetAccount['followers']);
+
+          // 2. ดีดกลับไปหน้า SignIn เพื่อเริ่มต้นโหลดข้อมูลใหม่ทั้งหมด (แก้ Error)
+          if (mounted) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const SignInScreen()),
+              (route) => false,
+            );
+          }
+        },
       ),
       appBar: AppBar(
         backgroundColor: tweetyYellow,
@@ -570,167 +591,168 @@ class _SearchScreenState extends State<SearchScreen> {
               return Padding(
                 padding: const EdgeInsets.all(12.0),
                 child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // ✅ กดรูปโปรไฟล์ → ไปหน้า ProfileScreen ของเจ้าของโพสต์
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ProfileScreen(
-                                targetUserId: post['user_id'] ?? 0,
-                                username: post['username'] ?? '',
-                                handle: post['username'] ?? '',
-                                following: 0,
-                                followers: 0,
-                              ),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ✅ กดรูปโปรไฟล์ → ไปหน้า ProfileScreen ของเจ้าของโพสต์
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ProfileScreen(
+                              targetUserId: post['user_id'] ?? 0,
+                              username: post['username'] ?? '',
+                              handle: post['username'] ?? '',
+                              following: 0,
+                              followers: 0,
                             ),
-                          );
-                        },
-                        child: CircleAvatar(
-                          backgroundColor: Colors.black,
-                          backgroundImage: (post['profile_image_url'] ?? '').isNotEmpty
-                              ? NetworkImage(post['profile_image_url'])
-                              : null,
-                          child: (post['profile_image_url'] ?? '').isEmpty
-                              ? const Icon(Icons.person, color: Colors.white)
-                              : null,
-                        ),
+                          ),
+                        );
+                      },
+                      child: CircleAvatar(
+                        backgroundColor: Colors.black,
+                        backgroundImage:
+                            (post['profile_image_url'] ?? '').isNotEmpty
+                            ? NetworkImage(post['profile_image_url'])
+                            : null,
+                        child: (post['profile_image_url'] ?? '').isEmpty
+                            ? const Icon(Icons.person, color: Colors.white)
+                            : null,
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  post['username'] ?? 'User',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                post['username'] ?? 'User',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  formattedDate,
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 12,
-                                  ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                formattedDate,
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 12,
                                 ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              post['content'] ?? '',
-                              style: const TextStyle(fontSize: 15),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.chat_bubble_outline,
-                                    size: 20,
-                                    color: Colors.grey,
-                                  ),
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => CommentScreen(
-                                          postData: post,
-                                          tweetyYellow: tweetyYellow,
-                                          channel: _channel,
-                                          broadcastStream: _broadcastStream,
-                                          myUserId: myUserId,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                // 🔴 จุดที่แก้ 3: เปลี่ยนจาก Icon เป็น IconButton เพื่อให้กด Like ได้
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      constraints: const BoxConstraints(),
-                                      padding: EdgeInsets.zero,
-                                      icon: Icon(
-                                        (post['is_liked'] == true)
-                                            ? Icons.favorite
-                                            : Icons.favorite_border,
-                                        size: 20,
-                                        color: (post['is_liked'] == true)
-                                            ? Colors.red
-                                            : Colors.grey,
-                                      ),
-                                      onPressed: () =>
-                                          _toggleLike(post['post_id'] ?? 0),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      "${post['likes_count'] ?? 0}",
-                                      style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      constraints: const BoxConstraints(),
-                                      padding: EdgeInsets.zero,
-                                      icon: Icon(
-                                        Icons.repeat,
-                                        size: 20,
-                                        color: (post['is_reposted'] == true)
-                                            ? Colors.green
-                                            : Colors.grey,
-                                      ),
-                                      onPressed: () =>
-                                          _toggleRepost(post['post_id'] ?? 0),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      "${post['reposts_count'] ?? 0}",
-                                      style: TextStyle(
-                                        color: Colors.grey[600],
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    (post['is_bookmarked'] == true)
-                                        ? Icons.bookmark
-                                        : Icons.bookmark_border,
-                                    size: 20,
-                                    color: (post['is_bookmarked'] == true)
-                                        ? Colors.blue
-                                        : Colors.grey,
-                                  ),
-                                  onPressed: () =>
-                                      _toggleBookmark(post['post_id'] ?? 0),
-                                ),
-
-                                //Share icon ยังไม่เป็น Button
-                                const Icon(
-                                  Icons.ios_share,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            post['content'] ?? '',
+                            style: const TextStyle(fontSize: 15),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.chat_bubble_outline,
                                   size: 20,
                                   color: Colors.grey,
                                 ),
-                              ],
-                            ),
-                          ],
-                        ),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => CommentScreen(
+                                        postData: post,
+                                        tweetyYellow: tweetyYellow,
+                                        channel: _channel,
+                                        broadcastStream: _broadcastStream,
+                                        myUserId: myUserId,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              // 🔴 จุดที่แก้ 3: เปลี่ยนจาก Icon เป็น IconButton เพื่อให้กด Like ได้
+                              Row(
+                                children: [
+                                  IconButton(
+                                    constraints: const BoxConstraints(),
+                                    padding: EdgeInsets.zero,
+                                    icon: Icon(
+                                      (post['is_liked'] == true)
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      size: 20,
+                                      color: (post['is_liked'] == true)
+                                          ? Colors.red
+                                          : Colors.grey,
+                                    ),
+                                    onPressed: () =>
+                                        _toggleLike(post['post_id'] ?? 0),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    "${post['likes_count'] ?? 0}",
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  IconButton(
+                                    constraints: const BoxConstraints(),
+                                    padding: EdgeInsets.zero,
+                                    icon: Icon(
+                                      Icons.repeat,
+                                      size: 20,
+                                      color: (post['is_reposted'] == true)
+                                          ? Colors.green
+                                          : Colors.grey,
+                                    ),
+                                    onPressed: () =>
+                                        _toggleRepost(post['post_id'] ?? 0),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    "${post['reposts_count'] ?? 0}",
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              IconButton(
+                                icon: Icon(
+                                  (post['is_bookmarked'] == true)
+                                      ? Icons.bookmark
+                                      : Icons.bookmark_border,
+                                  size: 20,
+                                  color: (post['is_bookmarked'] == true)
+                                      ? Colors.blue
+                                      : Colors.grey,
+                                ),
+                                onPressed: () =>
+                                    _toggleBookmark(post['post_id'] ?? 0),
+                              ),
+
+                              //Share icon ยังไม่เป็น Button
+                              const Icon(
+                                Icons.ios_share,
+                                size: 20,
+                                color: Colors.grey,
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
+                ),
               );
             },
           ),
@@ -791,36 +813,48 @@ class _SearchScreenState extends State<SearchScreen> {
         children: [
           IconButton(
             icon: const Icon(Icons.home_outlined, size: 28),
-            onPressed: () => Navigator.push(
+            onPressed: () => Navigator.pushReplacement(
+              // แนะนำให้ใช้ pushReplacement สำหรับเมนูด้านล่าง
               context,
               MaterialPageRoute(builder: (context) => const PostScreen()),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.search, size: 28, color: Colors.black),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const SearchScreen()),
-            ),
+            onPressed: () {}, // อยู่หน้านี้อยู่แล้ว ไม่ต้อง push ใหม่
           ),
           IconButton(
             icon: const Icon(Icons.add_circle_outline, size: 30),
             onPressed: _showPostBottomSheet,
           ),
+
+          // 🔴 แก้ไขปุ่ม Notification ส่งค่าไปให้ครบ
           IconButton(
             icon: const Icon(Icons.notifications_outlined, size: 28),
-            onPressed: () => Navigator.push(
+            onPressed: () => Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-                builder: (context) => const NotificationScreen(),
+                builder: (context) => NotificationScreen(
+                  myUserId: myUserId,
+                  channel: _channel,
+                  broadcastStream: _broadcastStream,
+                ),
               ),
             ),
           ),
+
+          // 🔴 แก้ไขปุ่ม Mail ส่งค่าไปให้ครบเช่นกัน
           IconButton(
             icon: const Icon(Icons.mail_outline, size: 28),
-            onPressed: () => Navigator.push(
+            onPressed: () => Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const ChatListScreen()),
+              MaterialPageRoute(
+                builder: (context) => ChatListScreen(
+                  myUserId: myUserId,
+                  channel: _channel,
+                  broadcastStream: _broadcastStream,
+                ),
+              ),
             ),
           ),
         ],

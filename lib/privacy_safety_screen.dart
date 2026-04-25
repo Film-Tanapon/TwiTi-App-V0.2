@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'mute_block_screen.dart';
+import 'content_view_screen.dart';
 
 class PrivacySafetyScreen extends StatelessWidget {
   const PrivacySafetyScreen({super.key});
@@ -31,21 +33,32 @@ class PrivacySafetyScreen extends StatelessWidget {
           children: [
             _buildSectionTitle('Your Activity'),
             _buildListItem(
+              context,
               Icons.article_outlined,
               'Content you see',
               'Decide what you see on TwiTi based on your interests.',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ContentViewScreen(),
+                  ),
+                );
+              },
             ),
             _buildListItem(
+              context,
               Icons.volume_off_outlined,
               'Mute and block',
               'Manage the accounts, words, and notifications that you’ve muted or blocked.',
-            ),
-            const Divider(),
-            _buildSectionTitle('Data sharing and off-TwiTi activity'),
-            _buildListItem(
-              Icons.location_on_outlined,
-              'Location information',
-              'Manage the location information TwiTi uses.',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MuteBlockScreen(),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -67,15 +80,13 @@ class PrivacySafetyScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildListItem(IconData icon, String title, String subtitle) {
+  Widget _buildListItem(BuildContext context, IconData icon, String title, String subtitle, {VoidCallback? onTap}) {
     return ListTile(
       leading: Icon(icon, color: Colors.black54),
       title: Text(title, style: const TextStyle(fontSize: 16)),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 13)),
       trailing: const Icon(Icons.chevron_right, size: 20),
-      onTap: () {
-        // เพิ่ม Navigation ไปยังหน้าย่อยอื่นๆ ได้ที่นี่
-      },
+      onTap: onTap,
     );
   }
 }

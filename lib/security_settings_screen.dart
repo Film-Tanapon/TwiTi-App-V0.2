@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'change_password_screen.dart';
+import 'login_history_screen.dart';
 
 class SecuritySettingsScreen extends StatelessWidget {
   const SecuritySettingsScreen({super.key});
@@ -34,40 +36,32 @@ class SecuritySettingsScreen extends StatelessWidget {
             ),
             
             _buildSecurityItem(
-              Icons.shield_outlined,
-              'Security',
-              'Manage your account’s security.',
+              Icons.lock_outline,
+              'Change password',
+              'Change your password at any time to keep your account secure.',
               onTap: () {
-                // TODO: ไปหน้าตั้งค่ารหัสผ่าน หรือ 2FA
-              },
-            ),
-            
-            _buildSecurityItem(
-              Icons.devices_other,
-              'Connected apps',
-              'Manage the apps that you have connected to your account to report and perform actions.',
-              onTap: () {
-                // TODO: ไปหน้าจัดการแอปที่เชื่อมต่อไว้
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ChangePasswordScreen(),
+                  ),
+                );
               },
             ),
 
+            const Divider(height: 1), // เส้นคั่นนิดนึงให้ดูสวย
             _buildSecurityItem(
               Icons.history,
-              'Sessions',
-              'See and manage your active sessions on different browsers and devices.',
+              'Login history',
+              'See and manage your active sessions.',
               onTap: () {
-                // TODO: ไปหน้าดูประวัติการ Login
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const LoginHistoryScreen(),
+                  ),
+                );
               },
-            ),
-
-            const Divider(),
-            _buildSectionTitle('Data and permissions'),
-            
-            _buildSecurityItem(
-              Icons.cloud_download_outlined,
-              'Download an archive of your data',
-              'Get insights into the type of information stored for your account.',
-              onTap: () {},
             ),
           ],
         ),

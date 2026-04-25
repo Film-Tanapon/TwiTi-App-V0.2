@@ -82,6 +82,37 @@ class _PostScreenState extends State<PostScreen> {
     });
   }
 
+  Future<void> _switchAccount(Map<String, String> targetAccount) async {
+    // 1. เขียนทับข้อมูลพื้นฐาน
+    await _storage.write(key: 'user_id', value: targetAccount['user_id']);
+    await _storage.write(key: 'username', value: targetAccount['username']);
+    await _storage.write(key: 'email', value: targetAccount['email']);
+    await _storage.write(key: 'handle', value: targetAccount['handle']);
+
+    // 2. เขียนทับข้อมูลตัวเลข (ถ้า targetAccount มีส่งมาให้)
+    // หากไม่มีส่งมา ให้ set เป็น "0" ไว้ก่อนเพื่อให้ _loadUserData ดึงไปใช้ง่ายๆ
+    await _storage.write(
+      key: 'following',
+      value: targetAccount['following'] ?? "0",
+    );
+    await _storage.write(
+      key: 'followers',
+      value: targetAccount['followers'] ?? "0",
+    );
+
+    // 3. จัดการสถานะ WebSocket และ UI
+    _channel?.sink.close();
+    _channel = null; // เคลียร์ instance เก่า
+
+    setState(() {
+      _isLoading = true;
+      _messages.clear(); // ล้างข้อมูลหน้า Feed เดิม
+    });
+
+    // 4. เรียกโหลดข้อมูลใหม่เข้า State
+    await _loadUserData();
+  }
+
   Future<void> _pickImage(StateSetter setSheetState) async {
     final XFile? pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -615,6 +646,8 @@ class _PostScreenState extends State<PostScreen> {
         email: myEmail,
         following: myFollowing,
         followers: myFollowers,
+        onSwitchAccount: (target) =>
+            _switchAccount(target), // ส่งฟังก์ชันไปให้ Drawer
       ),
       appBar: AppBar(
         backgroundColor: _tweetyYellow,
@@ -683,7 +716,8 @@ class _PostScreenState extends State<PostScreen> {
                         },
                         child: CircleAvatar(
                           backgroundColor: Colors.black,
-                          backgroundImage: (msg['profile_image_url'] ?? '').isNotEmpty
+                          backgroundImage:
+                              (msg['profile_image_url'] ?? '').isNotEmpty
                               ? NetworkImage(msg['profile_image_url'])
                               : null,
                           child: (msg['profile_image_url'] ?? '').isEmpty
@@ -840,7 +874,7 @@ class _PostScreenState extends State<PostScreen> {
           children: [
             IconButton(
               icon: const Icon(Icons.home, size: 30),
-              onPressed: () {},
+              onPressed: () {}, // อยู่หน้า Home อยู่แล้ว
             ),
             IconButton(
               icon: const Icon(Icons.search, size: 30),
@@ -853,20 +887,34 @@ class _PostScreenState extends State<PostScreen> {
               icon: const Icon(Icons.add_circle_outline, size: 32),
               onPressed: _showPostBottomSheet,
             ),
+
+            // 🔴 แก้ไขปุ่ม Notification ส่งค่า Real-time เข้าไป
             IconButton(
               icon: const Icon(Icons.notifications_outlined, size: 30),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const NotificationScreen(),
+                  builder: (context) => NotificationScreen(
+                    myUserId: myUserId,
+                    channel: _channel, // ส่งท่อ WebSocket ไป
+                    broadcastStream: _broadcastStream, // ส่งตัวดักฟังไป
+                  ),
                 ),
               ),
             ),
+
+            // 🔴 แก้ไขปุ่ม Mail เอา const ออก และส่งค่า Real-time เข้าไป
             IconButton(
               icon: const Icon(Icons.mail_outline, size: 30),
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const ChatListScreen()),
+                MaterialPageRoute(
+                  builder: (context) => ChatListScreen(
+                    myUserId: myUserId,
+                    channel: _channel,
+                    broadcastStream: _broadcastStream,
+                  ),
+                ),
               ),
             ),
           ],

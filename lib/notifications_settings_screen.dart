@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'push_notification_screen.dart';
+import 'mute_notification_screen.dart';
 
 class NotificationsSettingsScreen extends StatelessWidget {
   const NotificationsSettingsScreen({super.key});
@@ -25,6 +27,7 @@ class NotificationsSettingsScreen extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
       ),
+
       body: Container(
         color: Colors.white,
         child: ListView(
@@ -34,18 +37,32 @@ class NotificationsSettingsScreen extends StatelessWidget {
               Icons.notifications_active_outlined,
               'Push notifications',
               'Select which notifications you want to receive on your device.',
+              onTap: () {
+                // นำทางไปหน้า Push Notification
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PushNotificationScreen(),
+                  ),
+                );
+              },
             ),
-            _buildListItem(
-              Icons.email_outlined,
-              'Email notifications',
-              'Control the emails Tweety sends to you.',
-            ),
+
+            // ลบ _buildListItem ของ Email notifications ออกจากตรงนี้แล้ว
             const Divider(),
             _buildSectionTitle('Filters'),
             _buildListItem(
               Icons.filter_list,
               'Muted notifications',
               'Mute notifications from people you don’t know or with specific criteria.',
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MuteNotificationScreen(),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -67,15 +84,18 @@ class NotificationsSettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildListItem(IconData icon, String title, String subtitle) {
+  Widget _buildListItem(
+    IconData icon,
+    String title,
+    String subtitle, {
+    VoidCallback? onTap,
+  }) {
     return ListTile(
       leading: Icon(icon, color: Colors.black54),
       title: Text(title, style: const TextStyle(fontSize: 16)),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 13)),
       trailing: const Icon(Icons.chevron_right, size: 20),
-      onTap: () {
-        // จัดการ Action เมื่อกดเมนูย่อย
-      },
+      onTap: onTap, // นำมาใช้งานที่นี่
     );
   }
 }
