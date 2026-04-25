@@ -28,7 +28,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   }
 
   void _connectWebSocket() {
-    _channel = WebSocketChannel.connect(Uri.parse('ws://localhost:3000/ws'));
+    _channel = WebSocketChannel.connect(Uri.parse('wss://twiti-server-v0-2.onrender.com/ws'));
 
     // Send register_connection first
     _channel!.sink.add(json.encode({

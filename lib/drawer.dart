@@ -57,7 +57,7 @@ class _MyDrawerState extends State<MyDrawer> {
     // 2. เชื่อมต่อ Backend ผ่าน WebSocket เพื่ออัปเดตข้อมูลล่าสุด
     try {
       // เปลี่ยน URL เป็น IP หรือ Domain ของ Backend คุณ
-      _channel = WebSocketChannel.connect(Uri.parse('ws://localhost:3000/ws'));
+      _channel = WebSocketChannel.connect(Uri.parse('wss://twiti-server-v0-2.onrender.com/ws'));
       
       _channel?.sink.add(jsonEncode({
         "action": "fetch_sub_accounts", 

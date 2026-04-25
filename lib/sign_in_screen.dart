@@ -55,7 +55,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
     try {
       final channel = WebSocketChannel.connect(
-        Uri.parse('ws://localhost:3000/ws'),
+        Uri.parse('wss://twiti-server-v0-2.onrender.com/ws'),
       );
 
       final request = {
@@ -132,7 +132,7 @@ class _SignInScreenState extends State<SignInScreen> {
 
       if (idToken != null) {
         final channel = WebSocketChannel.connect(
-          Uri.parse('wss://tweety-server.onrender.com'),
+          Uri.parse('wss://twiti-server-v0-2.onrender.com/ws'),
         );
 
         final request = {"action": "google_login", "token": idToken};

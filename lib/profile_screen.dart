@@ -48,7 +48,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     String? idStr = await storage.read(key: 'user_id');
     myUserId = int.tryParse(idStr ?? '0') ?? 0;
 
-    _channel = WebSocketChannel.connect(Uri.parse('ws://localhost:3000/ws'));
+    _channel = WebSocketChannel.connect(Uri.parse('wss://twiti-server-v0-2.onrender.com/ws'));
 
     // ขอข้อมูลโพสต์ + สถานะ follow ในครั้งเดียว
     _channel?.sink.add(

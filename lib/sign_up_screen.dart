@@ -55,7 +55,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     try {
       _channel = WebSocketChannel.connect(
-        Uri.parse('wss://tweety-server.onrender.com'),
+        Uri.parse('wss://twiti-server-v0-2.onrender.com/ws'),
       );
 
       // Timeout 15 วินาที — เผื่อ Render.com cold start

@@ -32,7 +32,7 @@ class _BookmarksScreenState extends State<BookmarksScreen> {
     myUserId = int.tryParse(idStr ?? '0') ?? 0;
     myHandle = handle;
 
-    _channel = WebSocketChannel.connect(Uri.parse('ws://localhost:3000/ws'));
+    _channel = WebSocketChannel.connect(Uri.parse('wss://twiti-server-v0-2.onrender.com/ws'));
 
     // ส่ง action เพื่อดึง bookmarks
     _channel?.sink.add(jsonEncode({

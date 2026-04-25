@@ -83,9 +83,9 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  void _connectToServer() async {
+  Future<bool> _connectToServer() async {
     try {
-      final wsUrl = Uri.parse('ws://localhost:3000/ws');
+      final wsUrl = Uri.parse('wss://twiti-server-v0-2.onrender.com/ws');
       _channel = WebSocketChannel.connect(wsUrl);
       debugPrint('✅ Connected to WebSocket Server on Render');
 
@@ -97,11 +97,21 @@ class _SearchScreenState extends State<SearchScreen> {
         (message) {
           _handleIncomingData(message.toString());
         },
-        onError: (error) => debugPrint('❌ WebSocket Error: $error'),
-        onDone: () => debugPrint('⚠️ WebSocket Closed'),
+        onError: (error) {
+          debugPrint('❌ WebSocket Error: $error');
+          setState(() {
+            _isLoading = false;
+          });
+        },
+        onDone: () {
+          debugPrint('⚠️ WebSocket Closed');
+          _channel = null;
+        },
       );
+      return true;
     } catch (e) {
       debugPrint('❌ Connection Error: $e');
+      return false;
     }
   }
 
@@ -110,6 +120,22 @@ class _SearchScreenState extends State<SearchScreen> {
       final decoded = jsonDecode(jsonStr);
       final action = decoded['action'];
       final data = decoded['data'];
+
+      if (action == 'search_results') {
+        final users = List<Map<String, dynamic>>.from(decoded['users'] ?? []);
+        final posts = List<Map<String, dynamic>>.from(decoded['posts'] ?? []);
+
+        if (mounted) {
+          setState(() {
+            _userResults = users;
+            _postResults
+              ..clear()
+              ..addAll(posts);
+            _isLoading = false;
+          });
+        }
+        return;
+      }
 
       setState(() {
         if (action == 'new_post' && data['parent_post_id'] == null) {
@@ -227,6 +253,37 @@ class _SearchScreenState extends State<SearchScreen> {
     _postController.clear();
     _imageBytes = null;
     Navigator.pop(context);
+  }
+
+  Future<void> _fetchSearchFallback(String keyword) async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+          'https://twiti-server-v0-2.onrender.com/api/search?q=${Uri.encodeComponent(keyword)}&userID=$myUserId',
+        ),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            _userResults = List<Map<String, dynamic>>.from(data['users'] ?? []);
+            _postResults
+              ..clear()
+              ..addAll(List<Map<String, dynamic>>.from(data['posts'] ?? []));
+            _isLoading = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
+    } catch (e) {
+      debugPrint('Fallback HTTP search error: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   void _showPostBottomSheet() {
@@ -383,31 +440,23 @@ class _SearchScreenState extends State<SearchScreen> {
     });
     if (!_searchHistory.contains(keyword)) _searchHistory.insert(0, keyword);
 
-    try {
-      String baseUrl = kIsWeb
-          ? 'http://localhost:3000'
-          : (Platform.isAndroid
-                ? 'http://10.0.2.2:3000'
-                : 'http://localhost:3000');
-      final response = await http.get(
-        Uri.parse(
-          '$baseUrl/api/search?q=${Uri.encodeComponent(keyword)}&userID=$myUserId',
-        ),
-      );
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          _userResults = List<Map<String, dynamic>>.from(data['users'] ?? []);
-          _postResults.clear();
-          for (var post in data['posts'] ?? []) {
-            _postResults.add(Map<String, dynamic>.from(post));
-          }
-        });
+    if (_channel == null) {
+      final connected = await _connectToServer();
+      if (!connected || _channel == null) {
+        await _fetchSearchFallback(keyword);
+        return;
       }
+    }
+
+    try {
+      _channel!.sink.add(jsonEncode({
+        'action': 'search',
+        'user_id': myUserId,
+        'query': keyword,
+      }));
     } catch (e) {
-      debugPrint("Fetch error: $e");
-    } finally {
-      setState(() => _isLoading = false);
+      debugPrint('Search WebSocket error: $e');
+      await _fetchSearchFallback(keyword);
     }
   }
 
