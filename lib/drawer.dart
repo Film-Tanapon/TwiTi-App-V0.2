@@ -196,7 +196,7 @@ class _MyDrawerState extends State<MyDrawer> {
                 const Divider(),
                 _buildMenuItem(Icons.settings_outlined, 'Settings and Privacy', () {
                   Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen()));
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsScreen(userId: widget.userId)));
                 }),
               ],
             ),

@@ -5,8 +5,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
 
 import 'edit_profile_screen.dart';
-// 1. อย่าลืม import ไฟล์หน้าแชทของคุณที่นี่
-import 'chat_room_screen.dart'; 
+import 'chat_room_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final int targetUserId;
@@ -36,6 +35,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int myUserId = 0;
   bool _isLoading = true;
   bool _isFollowing = false;
+  bool _isFollowLoading = false; // ป้องกันกดซ้ำระหว่างรอ
 
   @override
   void initState() {
@@ -50,6 +50,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     _channel = WebSocketChannel.connect(Uri.parse('ws://localhost:3000/ws'));
 
+    // ขอข้อมูลโพสต์ + สถานะ follow ในครั้งเดียว
     _channel?.sink.add(
       jsonEncode({
         "action": "fetch_profile_data",
@@ -59,22 +60,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
 
     _channel?.stream.listen((message) {
+      if (!mounted) return;
       final data = jsonDecode(message);
+
       if (data['action'] == 'profile_data_response') {
-        if (mounted) {
-          setState(() {
-            _ownPosts = List<Map<String, dynamic>>.from(
-              (data['posts'] ?? []).map((e) => Map<String, dynamic>.from(e)),
-            );
-            _reposts = List<Map<String, dynamic>>.from(
-              (data['reposts'] ?? []).map((e) => Map<String, dynamic>.from(e)),
-            );
-            _favorites = List<Map<String, dynamic>>.from(
-              (data['favorites'] ?? []).map((e) => Map<String, dynamic>.from(e)),
-            );
-            _isLoading = false;
-          });
-        }
+        setState(() {
+          _ownPosts = List<Map<String, dynamic>>.from(
+            (data['posts'] ?? []).map((e) => Map<String, dynamic>.from(e)),
+          );
+          _reposts = List<Map<String, dynamic>>.from(
+            (data['reposts'] ?? []).map((e) => Map<String, dynamic>.from(e)),
+          );
+          _favorites = List<Map<String, dynamic>>.from(
+            (data['favorites'] ?? []).map((e) => Map<String, dynamic>.from(e)),
+          );
+          // 🟢 รับสถานะ is_following ที่ Backend ส่งมาด้วย
+          _isFollowing = data['is_following'] == true;
+          _isLoading = false;
+        });
+      }
+
+      // 🟢 รับผลลัพธ์จากการ toggle follow
+      if (data['action'] == 'follow_result') {
+        setState(() {
+          _isFollowing = data['is_following'] == true;
+          _isFollowLoading = false;
+        });
       }
 
       if (data['action'] == 'update_post_stats') {
@@ -99,14 +110,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // --- Actions ---
+  // 🟢 ฟังก์ชัน Follow/Unfollow ที่บันทึกข้อมูลลง DB จริง
+  void _toggleFollow() {
+    if (_isFollowLoading) return; // ป้องกันกดซ้ำ
+    setState(() => _isFollowLoading = true);
 
-  // 🟢 แก้ไขฟังก์ชันนี้เพื่อ Navigate ไปหน้าแชท
+    _channel?.sink.add(
+      jsonEncode({
+        'action': 'toggle_follow',
+        'user_id': myUserId,          // follower_id = เรา
+        'target_user_id': widget.targetUserId, // following_id = เป้าหมาย
+      }),
+    );
+  }
+
+  // 🟢 กดไอคอน inbox → ไปหน้า ChatRoomScreen พร้อมข้อมูลครบ
   void _startChat() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ChatRoomScreen(userName: widget.username),
+        builder: (context) => ChatRoomScreen(
+          userName: widget.username,
+          myUserId: myUserId,
+          receiverId: widget.targetUserId,
+        ),
       ),
     );
   }
@@ -122,13 +149,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ((list[index]['likes_count'] ?? 0) as int) + (isLiked ? -1 : 1);
     });
 
-    _channel?.sink.add(
-      jsonEncode({
-        'action': 'toggle_like',
-        'user_id': myUserId,
-        'post_id': postId,
-      }),
-    );
+    _channel?.sink.add(jsonEncode({
+      'action': 'toggle_like',
+      'user_id': myUserId,
+      'post_id': postId,
+    }));
   }
 
   void _toggleRepost(List<Map<String, dynamic>> list, int postId) {
@@ -142,13 +167,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ((list[index]['reposts_count'] ?? 0) as int) + (isReposted ? -1 : 1);
     });
 
-    _channel?.sink.add(
-      jsonEncode({
-        'action': 'toggle_repost',
-        'user_id': myUserId,
-        'post_id': postId,
-      }),
-    );
+    _channel?.sink.add(jsonEncode({
+      'action': 'toggle_repost',
+      'user_id': myUserId,
+      'post_id': postId,
+    }));
   }
 
   void _toggleBookmark(List<Map<String, dynamic>> list, int postId) {
@@ -159,13 +182,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       list[index]['is_bookmarked'] = !(list[index]['is_bookmarked'] == true);
     });
 
-    _channel?.sink.add(
-      jsonEncode({
-        'action': 'toggle_bookmark',
-        'user_id': myUserId,
-        'post_id': postId,
-      }),
-    );
+    _channel?.sink.add(jsonEncode({
+      'action': 'toggle_bookmark',
+      'user_id': myUserId,
+      'post_id': postId,
+    }));
   }
 
   @override
@@ -228,6 +249,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       ),
                                     ],
                                   ),
+                                  // 🟢 แสดงปุ่มตาม context: หน้าตัวเอง vs หน้าคนอื่น
                                   myUserId == widget.targetUserId
                                       ? OutlinedButton(
                                           onPressed: () async {
@@ -243,17 +265,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                                 ),
                                               ),
                                             );
-                                            if (result != null && result['newName'] != null) {
-                                              setState(() {
-                                                _isLoading = true;
-                                              });
-                                              _channel?.sink.add(
-                                                jsonEncode({
-                                                  "action": "fetch_profile_data",
-                                                  "user_id": myUserId,
-                                                  "target_user_id": widget.targetUserId,
-                                                }),
-                                              );
+                                            if (result != null &&
+                                                result['newName'] != null) {
+                                              setState(() => _isLoading = true);
+                                              _channel?.sink.add(jsonEncode({
+                                                "action": "fetch_profile_data",
+                                                "user_id": myUserId,
+                                                "target_user_id": widget.targetUserId,
+                                              }));
                                             }
                                           },
                                           style: OutlinedButton.styleFrom(
@@ -270,6 +289,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                         )
                                       : Row(
                                           children: [
+                                            // 🟢 ปุ่ม Inbox → ไปหน้า ChatRoom
                                             OutlinedButton(
                                               onPressed: _startChat,
                                               style: OutlinedButton.styleFrom(
@@ -279,18 +299,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                                 minimumSize: const Size(40, 40),
                                               ),
                                               child: const Icon(
-                                                Icons.mail_outline, 
-                                                color: Colors.black, 
-                                                size: 20
+                                                Icons.mail_outline,
+                                                color: Colors.black,
+                                                size: 20,
                                               ),
                                             ),
                                             const SizedBox(width: 8),
+                                            // 🟢 ปุ่ม Follow/Unfollow ที่บันทึก DB จริง
                                             ElevatedButton(
-                                              onPressed: () {
-                                                setState(() {
-                                                  _isFollowing = !_isFollowing;
-                                                });
-                                              },
+                                              onPressed: _isFollowLoading ? null : _toggleFollow,
                                               style: ElevatedButton.styleFrom(
                                                 backgroundColor: _isFollowing
                                                     ? Colors.white
@@ -304,10 +321,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                                     : null,
                                                 elevation: 0,
                                               ),
-                                              child: Text(
-                                                _isFollowing ? 'Following' : 'Follow',
-                                                style: const TextStyle(fontWeight: FontWeight.bold),
-                                              ),
+                                              child: _isFollowLoading
+                                                  ? const SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child: CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        color: Colors.grey,
+                                                      ),
+                                                    )
+                                                  : Text(
+                                                      _isFollowing ? 'Following' : 'Follow',
+                                                      style: const TextStyle(
+                                                        fontWeight: FontWeight.bold,
+                                                      ),
+                                                    ),
                                             ),
                                           ],
                                         ),
@@ -316,15 +344,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               const SizedBox(height: 15),
                               Row(
                                 children: [
-                                  _buildStatText(
-                                    widget.following.toString(),
-                                    'Following',
-                                  ),
+                                  _buildStatText(widget.following.toString(), 'Following'),
                                   const SizedBox(width: 20),
-                                  _buildStatText(
-                                    widget.followers.toString(),
-                                    'Followers',
-                                  ),
+                                  _buildStatText(widget.followers.toString(), 'Followers'),
                                 ],
                               ),
                             ],
@@ -365,11 +387,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: const CircleAvatar(
                             radius: 40,
                             backgroundColor: Colors.black,
-                            child: Icon(
-                              Icons.person,
-                              size: 50,
-                              color: Colors.white,
-                            ),
+                            child: Icon(Icons.person, size: 50, color: Colors.white),
                           ),
                         ),
                       ),
@@ -398,10 +416,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildStatText(String count, String label) {
     return Row(
       children: [
-        Text(
-          count,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
+        Text(count, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         const SizedBox(width: 4),
         Text(label, style: const TextStyle(color: Colors.grey, fontSize: 16)),
       ],
@@ -430,9 +445,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         String formattedDate = '';
         if (post['created_at'] != null) {
           try {
-            DateTime parsedDate = DateTime.parse(
-              post['created_at'].toString(),
-            ).toLocal();
+            DateTime parsedDate =
+                DateTime.parse(post['created_at'].toString()).toLocal();
             formattedDate = DateFormat('dd MMM, HH:mm').format(parsedDate);
           } catch (_) {}
         }
@@ -446,9 +460,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   CircleAvatar(
                     backgroundColor: Colors.black,
-                    backgroundImage: (post['profile_image_url'] ?? '').isNotEmpty
-                        ? NetworkImage(post['profile_image_url'])
-                        : null,
+                    backgroundImage:
+                        (post['profile_image_url'] ?? '').isNotEmpty
+                            ? NetworkImage(post['profile_image_url'])
+                            : null,
                     child: (post['profile_image_url'] ?? '').isEmpty
                         ? const Icon(Icons.person, color: Colors.white, size: 25)
                         : null,
@@ -467,16 +482,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             const SizedBox(width: 8),
                             Text(
                               formattedDate,
-                              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                              style: TextStyle(
+                                  color: Colors.grey[600], fontSize: 12),
                             ),
                           ],
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          post['content'] ?? '',
-                          style: const TextStyle(fontSize: 15),
-                        ),
-                        if (post['image_urls'] != null && (post['image_urls'] as List).isNotEmpty)
+                        Text(post['content'] ?? '',
+                            style: const TextStyle(fontSize: 15)),
+                        if (post['image_urls'] != null &&
+                            (post['image_urls'] as List).isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: ClipRRect(
@@ -488,19 +503,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Icon(Icons.chat_bubble_outline, size: 20, color: Colors.grey),
+                            const Icon(Icons.chat_bubble_outline,
+                                size: 20, color: Colors.grey),
                             Row(
                               children: [
                                 GestureDetector(
                                   onTap: () => _toggleLike(posts, postId),
                                   child: Icon(
-                                    isLiked ? Icons.favorite : Icons.favorite_border,
+                                    isLiked
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
                                     size: 20,
                                     color: isLiked ? Colors.red : Colors.grey,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
-                                Text('$likesCount', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                                Text('$likesCount',
+                                    style: TextStyle(
+                                        color: Colors.grey[600], fontSize: 12)),
                               ],
                             ),
                             Row(
@@ -510,22 +530,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   child: Icon(
                                     Icons.repeat,
                                     size: 20,
-                                    color: isReposted ? Colors.green : Colors.grey,
+                                    color: isReposted
+                                        ? Colors.green
+                                        : Colors.grey,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
-                                Text('$repostsCount', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                                Text('$repostsCount',
+                                    style: TextStyle(
+                                        color: Colors.grey[600], fontSize: 12)),
                               ],
                             ),
                             GestureDetector(
                               onTap: () => _toggleBookmark(posts, postId),
                               child: Icon(
-                                isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+                                isBookmarked
+                                    ? Icons.bookmark
+                                    : Icons.bookmark_border,
                                 size: 20,
-                                color: isBookmarked ? Colors.blue : Colors.grey,
+                                color:
+                                    isBookmarked ? Colors.blue : Colors.grey,
                               ),
                             ),
-                            const Icon(Icons.ios_share, size: 20, color: Colors.grey),
+                            const Icon(Icons.ios_share,
+                                size: 20, color: Colors.grey),
                           ],
                         ),
                       ],

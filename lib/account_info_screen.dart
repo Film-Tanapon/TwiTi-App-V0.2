@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 class AccountInfoScreen extends StatefulWidget {
-  const AccountInfoScreen({super.key});
+  final int userId;
+
+  const AccountInfoScreen({super.key, required this.userId});
 
   @override
   State<AccountInfoScreen> createState() => _AccountInfoScreenState();
@@ -12,27 +15,53 @@ class AccountInfoScreen extends StatefulWidget {
 class _AccountInfoScreenState extends State<AccountInfoScreen> {
   Map<String, dynamic>? userData;
   bool isLoading = true;
+  WebSocketChannel? _channel;
 
   @override
   void initState() {
     super.initState();
-    fetchUserData();
+    _connectWebSocket();
   }
 
-  // --- 1. ดึงข้อมูล (GET) ---
-  Future<void> fetchUserData() async {
-    // จำลองการโหลดข้อมูล (ในเครื่องจริงให้เปลี่ยน URL และใส่ Token)
-    await Future.delayed(const Duration(seconds: 1));
-    setState(() {
-      userData = {
-        'username': 'TwiTi_User',
-        'email': 'user@example.com',
-        'phone': '081-234-5678',
-        'country': 'Thailand',
-        'birth_date': 'Jan 01, 2000',
-      };
-      isLoading = false;
-    });
+  void _connectWebSocket() {
+    _channel = WebSocketChannel.connect(Uri.parse('ws://localhost:3000/ws'));
+
+    // Send register_connection first
+    _channel!.sink.add(json.encode({
+      "action": "register_connection",
+      "user_id": widget.userId,
+    }));
+
+    // Then fetch account info
+    _channel!.sink.add(json.encode({
+      "action": "fetch_account_info",
+      "user_id": widget.userId,
+    }));
+
+    // Listen for responses
+    _channel!.stream.listen(
+      (message) {
+        final data = json.decode(message);
+        if (data['action'] == 'account_info_response') {
+          setState(() {
+            userData = data['data'];
+            isLoading = false;
+          });
+        } else if (data['action'] == 'update_success') {
+          setState(() => isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Profile updated successfully!')),
+          );
+        }
+      },
+      onError: (error) {
+        print('WebSocket Error: $error');
+        setState(() => isLoading = false);
+      },
+      onDone: () {
+        print('WebSocket Closed');
+      },
+    );
   }
 
   // --- 2. ฟังก์ชันอัปเดตข้อมูล (UPDATE/PUT) ---
@@ -40,23 +69,18 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
     setState(() => isLoading = true);
 
     try {
-      // TODO: ใส่ URL API ของคุณ เช่น Uri.parse('https://api.example.com/user/update')
-      // final response = await http.put(url, body: json.encode({field: newValue}), ...);
-
-      // จำลองว่า Backend บันทึกสำเร็จ
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      setState(() {
-        userData?[field] = newValue;
-        isLoading = false;
-      });
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('$field updated!')));
+      _channel!.sink.add(json.encode({
+        "action": "update_account_field",
+        "user_id": widget.userId,
+        "field": field,
+        "content": newValue,
+      }));
     } catch (e) {
       setState(() => isLoading = false);
       print("Update Error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Update failed: $e')),
+      );
     }
   }
 
@@ -205,5 +229,11 @@ class _AccountInfoScreenState extends State<AccountInfoScreen> {
         const Divider(height: 1, indent: 16),
       ],
     );
+  }
+
+  @override
+  void dispose() {
+    _channel?.sink.close();
+    super.dispose();
   }
 }

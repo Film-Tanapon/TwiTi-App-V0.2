@@ -6,7 +6,9 @@ import 'notifications_settings_screen.dart';
 import 'sign_in_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key});
+  final int userId;
+
+  const SettingsScreen({super.key, required this.userId});
 
   @override
   Widget build(BuildContext context) {
@@ -42,7 +44,8 @@ class SettingsScreen extends StatelessWidget {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const AccountInfoScreen()),
+                  MaterialPageRoute(builder: (context) => AccountInfoScreen(userId: userId),
+                  ),
                 );
               },
             ),
@@ -54,7 +57,7 @@ class SettingsScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const SecuritySettingsScreen(),
+                    builder: (context) => SecuritySettingsScreen(userId: userId),
                   ),
                 );
               },
@@ -70,7 +73,7 @@ class SettingsScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const PrivacySafetyScreen(),
+                    builder: (context) => PrivacySafetyScreen(),
                   ),
                 );
               },
@@ -83,7 +86,7 @@ class SettingsScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const NotificationsSettingsScreen(),
+                    builder: (context) => NotificationsSettingsScreen(),
                   ),
                 );
               },

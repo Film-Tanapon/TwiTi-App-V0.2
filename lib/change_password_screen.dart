@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 // import 'package:http/http.dart' as http; // เตรียมไว้สำหรับเรียกใช้ API จริง
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:convert';
 
 class ChangePasswordScreen extends StatefulWidget {
-  const ChangePasswordScreen({super.key});
+  final int userId;
+
+  const ChangePasswordScreen({super.key, required this.userId});
 
   @override
   State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
@@ -14,19 +18,70 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  // ฟังก์ชันแสดง Popup แจ้งเตือน (เปลี่ยนเป็นภาษาอังกฤษ)
+  WebSocketChannel? _channel;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _connectWebSocket();
+  }
+
+  void _connectWebSocket() {
+    _channel = WebSocketChannel.connect(Uri.parse('ws://localhost:3000/ws'));
+
+    // Send register_connection first
+    _channel!.sink.add(json.encode({
+      "action": "register_connection",
+      "user_id": widget.userId,
+    }));
+
+    // Listen for responses
+    _channel!.stream.listen(
+      (message) {
+        print('Received WebSocket message: $message'); // Debug log
+        final data = json.decode(message);
+        final action = data['action'];
+        
+        if (action == 'password_changed') {
+          setState(() => _isLoading = false);
+          _showNotification('Success', 'Password changed successfully!');
+          // Clear the form
+          _currentPasswordController.clear();
+          _newPasswordController.clear();
+          _confirmPasswordController.clear();
+        } else if (action == 'error') {
+          setState(() => _isLoading = false);
+          _showNotification('Error', data['message'] ?? 'An error occurred');
+        } else {
+          print('Unknown action received: $action'); // Debug log for unknown actions
+          setState(() => _isLoading = false);
+          _showNotification('Error', 'Unknown response from server: $action');
+        }
+      },
+      onError: (error) {
+        print('WebSocket Error: $error');
+        setState(() => _isLoading = false);
+        _showNotification('Connection Error', 'Unable to reach the server.');
+      },
+      onDone: () {
+        print('WebSocket Closed');
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _channel?.sink.close();
+    super.dispose();
+  }
+
+  // ฟังก์ชันแสดงการแจ้งเตือน
   void _showNotification(String title, String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$title: $message'),
+        backgroundColor: title == 'Error' ? Colors.red : Colors.green,
       ),
     );
   }
@@ -49,36 +104,23 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
       return;
     }
 
-    // 3. เริ่มต้นการเชื่อมต่อ Backend (ส่วนนี้คือ Logic จริงที่จะใช้ส่งข้อมูล)
+    // 3. ตรวจสอบความยาวรหัสผ่านขั้นต่ำ
+    if (newPassword.length < 6) {
+      _showNotification('Error', 'New password must be at least 6 characters long.');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
     try {
-      print("System: Sending update request to API...");
-
-      /* // โครงสร้างการยิง API จริงจะเป็นประมาณนี้:
-      var response = await http.post(
-        Uri.parse('https://your-api-url.com/change-password'),
-        body: {
-          'old_password': currentPassword,
-          'new_password': newPassword,
-        },
-        headers: {
-          'Authorization': 'Bearer YOUR_TOKEN_HERE',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        // กรณีหลังบ้านตอบกลับว่าสำเร็จ
-        _showNotification('Success', 'Your password has been updated.');
-      } else if (response.statusCode == 401) {
-        // กรณีหลังบ้านแจ้งว่ารหัสผ่านปัจจุบันไม่ถูกต้อง (เทียบกับ Database)
-        _showNotification('Error', 'Incorrect current password.');
-      } else {
-        // กรณีเกิดข้อผิดพลาดอื่นๆ จาก Server
-        _showNotification('Error', 'Something went wrong. Please try again.');
-      }
-      */
-
+      _channel!.sink.add(json.encode({
+        "action": "change_password",
+        "user_id": widget.userId,
+        "old_password": currentPassword,
+        "password": newPassword,
+      }));
     } catch (e) {
-      // กรณีเชื่อมต่อ Server ไม่ได้ (เช่น เน็ตหลุด)
+      setState(() => _isLoading = false);
       _showNotification('Connection Error', 'Unable to reach the server.');
     }
   }
@@ -130,17 +172,19 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               width: double.infinity,
               height: 55,
               child: ElevatedButton(
-                onPressed: _handlePasswordUpdate,
+                onPressed: _isLoading ? null : _handlePasswordUpdate,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
+                  backgroundColor: _isLoading ? Colors.grey : Colors.black,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: const Text(
-                  'Update Password',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        'Update Password',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
               ),
             ),
           ],

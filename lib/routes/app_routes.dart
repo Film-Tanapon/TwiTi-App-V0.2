@@ -22,7 +22,6 @@ class AppRoutes {
     signInScreen: (context) => const SignInScreen(), //add
     postScreen: (context) => const PostScreen(),
 
-    settingsScreen: (context) => const SettingsScreen(),
     privacySafetyScreen: (context) => const PrivacySafetyScreen(),
     muteBlockScreen: (context) => const MuteBlockScreen(),
   };

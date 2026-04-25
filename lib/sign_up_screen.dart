@@ -17,11 +17,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController _confirmPasswordController = TextEditingController();
 
   bool _isLoading = false;
+  WebSocketChannel? _channel;
+  StreamSubscription? _sub;
+  Timer? _timeoutTimer;
 
   final Color _tweetyYellow = const Color(0xFFFFF100);
   final Color _tweetyGreen = const Color(0xFF00FF44);
 
   void _showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.redAccent, behavior: SnackBarBehavior.floating),
@@ -29,19 +33,39 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   void _showSuccess(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.green, behavior: SnackBarBehavior.floating),
     );
   }
 
-  // 🟢 ฟังก์ชันสมัครสมาชิก (ส่งข้อมูลไปเซิร์ฟเวอร์โดยตรง ไม่มี OTP)
+  void _cleanupConnection() {
+    _timeoutTimer?.cancel();
+    _sub?.cancel();
+    _channel?.sink.close();
+    _channel = null;
+    _sub = null;
+    _timeoutTimer = null;
+  }
+
   Future<void> _registerUser() async {
-    setState(() { _isLoading = true; });
+    setState(() => _isLoading = true);
+    _cleanupConnection(); // ปิด connection เก่าถ้ามี
+
     try {
-      final channel = WebSocketChannel.connect(
+      _channel = WebSocketChannel.connect(
         Uri.parse('wss://tweety-server.onrender.com'),
       );
+
+      // Timeout 15 วินาที — เผื่อ Render.com cold start
+      _timeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (mounted && _isLoading) {
+          _cleanupConnection();
+          setState(() => _isLoading = false);
+          _showError("Connection timed out. Please try again.");
+        }
+      });
 
       final request = {
         "action": "email_register",
@@ -49,39 +73,47 @@ class _SignUpScreenState extends State<SignUpScreen> {
         "username": _nameController.text.trim(),
         "password": _passwordController.text,
       };
-      
-      channel.sink.add(jsonEncode(request));
 
-      channel.stream.listen((message) {
+      _channel!.sink.add(jsonEncode(request));
+
+      _sub = _channel!.stream.listen((message) {
         final jsonResponse = jsonDecode(message);
 
-        // 🟢 ตรวจสอบเฉพาะแอคชั่นที่เกี่ยวกับการสมัครสมาชิกเท่านั้น
         if (jsonResponse['action'] == 'register_success') {
+          _cleanupConnection();
+          if (!mounted) return;
+          setState(() => _isLoading = false);
           _showSuccess("Registration Successful!");
-          setState(() { _isLoading = false; }); // ปิดโหลดตรงนี้
-          channel.sink.close();
-          if (mounted) Navigator.pop(context); 
-        } 
-        else if (jsonResponse['action'] == 'error') {
+          Navigator.pop(context);
+        } else if (jsonResponse['action'] == 'error') {
+          _cleanupConnection();
+          if (!mounted) return;
+          setState(() => _isLoading = false);
           _showError(jsonResponse['message'] ?? "Registration failed");
-          setState(() { _isLoading = false; }); // ปิดโหลดตรงนี้
-          channel.sink.close();
         }
-        // 🟢 ถ้า action เป็น 'new_post' หรืออื่นๆ ระบบจะข้ามไป ไม่ชิงปิด Socket ก่อน
-        
+        // action อื่นๆ (new_post ฯลฯ) ข้ามไป ไม่ทำอะไร
       }, onError: (error) {
-         _showError("Connection error: $error");
-         setState(() { _isLoading = false; });
+        _cleanupConnection();
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        _showError("Connection error. Please try again.");
+      }, onDone: () {
+        // Server ปิด connection โดยไม่ตอบ
+        if (mounted && _isLoading) {
+          setState(() => _isLoading = false);
+          _showError("Server disconnected. Please try again.");
+        }
       });
-
     } catch (e) {
-      _showError("Connection failed: $e");
-      setState(() { _isLoading = false; });
+      _cleanupConnection();
+      setState(() => _isLoading = false);
+      _showError("Connection failed. Please check your internet.");
     }
   }
 
   @override
   void dispose() {
+    _cleanupConnection();
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();

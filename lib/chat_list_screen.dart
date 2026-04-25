@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
-import 'dart:async'; // 🟢 สำหรับ StreamSubscription
+import 'dart:async';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'chat_room_screen.dart';
@@ -10,6 +10,25 @@ import 'notification_screen.dart';
 import 'post_utils.dart';
 import 'drawer.dart';
 import 'sign_in_screen.dart';
+
+/// แปลง ISO8601 timestamp ให้เป็นข้อความเวลาที่อ่านง่าย
+String _formatTime(String? isoTime) {
+  if (isoTime == null || isoTime.isEmpty) return '';
+  try {
+    final dt = DateTime.parse(isoTime).toLocal();
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24 && dt.day == now.day) {
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    return '${dt.day}/${dt.month}';
+  } catch (_) {
+    return isoTime;
+  }
+}
 
 class ChatListScreen extends StatefulWidget {
   // 🟢 1. รับค่า Channel, Stream และ myUserId เพื่อให้ดึงข้อมูลจาก Backend ได้
@@ -46,67 +65,24 @@ class _ChatListScreenState extends State<ChatListScreen> {
   void initState() {
     super.initState();
 
-    // 1. ลองขอข้อมูลจาก Backend จริงก่อน
+    // ขอข้อมูล chat list จาก backend
     _requestChatList();
 
-    // 2. ตั้งเวลาจำลอง: ถ้าผ่านไป 1 วินาทีแล้ว Backend ยังไม่ตอบกลับ ให้โชว์ Mock Data แทน
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted && _chatRooms.isEmpty && _isLoading) {
-        setState(() {
-          _chatRooms = _getMockChatRooms();
-          _isLoading = false;
-        });
-      }
-    });
-
-    // 3. เริ่มดักฟังข้อความ (Real-time)
+    // เริ่มดักฟังข้อความ (Real-time)
     if (widget.broadcastStream != null) {
       _streamSubscription = widget.broadcastStream!.listen((message) {
         _handleIncomingData(message.toString());
       });
+    } else {
+      _isLoading = false;
     }
-  }
 
-  // 🟢 ฟังก์ชันสำหรับสร้างข้อมูลจำลอง (Mock Data)
-  List<Map<String, dynamic>> _getMockChatRooms() {
-    return [
-      {
-        'room_id': 101,
-        'name': 'John Doe',
-        'message': 'สวัสดีครับ สนใจโปรเจกต์นี้มาก!',
-        'time': '10:30 AM',
-      },
-      {
-        'room_id': 102,
-        'name': 'Flutter Developer',
-        'message': 'ส่งโค้ดชุดใหม่ให้แล้วนะ ลองเช็คดูใน GitHub',
-        'time': 'Yesterday',
-      },
-      {
-        'room_id': 103,
-        'name': 'Sarah Wilson',
-        'message': 'ขอบคุณสำหรับคำแนะนำเมื่อวานนะคะ',
-        'time': 'Yesterday',
-      },
-      {
-        'room_id': 104,
-        'name': 'Design Team',
-        'message': 'อัปเดตไฟล์ Figma สำหรับหน้า Profile เรียบร้อย',
-        'time': 'Feb 12',
-      },
-      {
-        'room_id': 105,
-        'name': 'Mike Ross',
-        'message': 'เจอกันที่ออฟฟิศพรุ่งนี้ตอนบ่ายนะครับ',
-        'time': 'Feb 10',
-      },
-      {
-        'room_id': 106,
-        'name': 'TwiTi Support',
-        'message': 'ยินดีต้อนรับสู่แอป TwiTi! มีอะไรให้ช่วยไหมครับ?',
-        'time': 'Feb 01',
-      },
-    ];
+    // Timeout fallback: ถ้า backend ไม่ตอบใน 3 วินาที ให้หยุด loading
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted && _isLoading) {
+        setState(() => _isLoading = false);
+      }
+    });
   }
 
   void _requestChatList() {
@@ -144,16 +120,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
           if (existingIndex != -1) {
             // ถ้ามีแล้ว ให้อัปเดตข้อความล่าสุด แล้วดันไปไว้บนสุด (index 0)
             final updatedRoom = _chatRooms.removeAt(existingIndex);
-            updatedRoom['message'] = newMessage['message'];
-            updatedRoom['time'] = newMessage['time']; // อัปเดตเวลาด้วย
+            updatedRoom['message'] = newMessage['content'] ?? newMessage['message'];
+            updatedRoom['time'] = newMessage['created_at']?.toString() ?? newMessage['time']; // อัปเดตเวลาด้วย
             _chatRooms.insert(0, updatedRoom);
           } else {
             // ถ้ายังไม่มี (เป็นแชทคนใหม่) ให้เพิ่มเข้าไปหน้าสุดเลย
             _chatRooms.insert(0, {
-              'room_id': newMessage['room_id'],
+              'room_id': newMessage['sender_id'] ?? newMessage['room_id'] ?? 0,
               'name': newMessage['sender_name'],
-              'message': newMessage['message'],
-              'time': newMessage['time'],
+              'message': newMessage['content'] ?? newMessage['message'],
+              'time': newMessage['created_at']?.toString() ?? newMessage['time'],
             });
           }
         });
@@ -263,7 +239,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   trailing: Text(
-                    chat['time'] ?? '',
+                    _formatTime(chat['time']?.toString()),
                     style: const TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                   onTap: () {
@@ -273,8 +249,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       MaterialPageRoute(
                         builder: (context) => ChatRoomScreen(
                           userName: chat['name'] ?? 'Unknown',
-                          // channel: widget.channel, // ถ้าหน้า ChatRoom รับค่านี้ ให้เปิดคอมเมนต์
-                          // myUserId: widget.myUserId,
+                          myUserId: widget.myUserId,
+                          receiverId: chat['room_id'] ?? 0,
+                          channel: widget.channel,
+                          broadcastStream: widget.broadcastStream,
                         ),
                       ),
                     );

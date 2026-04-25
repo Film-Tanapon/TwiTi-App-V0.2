@@ -3,7 +3,9 @@ import 'change_password_screen.dart';
 import 'login_history_screen.dart';
 
 class SecuritySettingsScreen extends StatelessWidget {
-  const SecuritySettingsScreen({super.key});
+  final int userId;
+
+  const SecuritySettingsScreen({super.key, required this.userId});
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +45,7 @@ class SecuritySettingsScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const ChangePasswordScreen(),
+                    builder: (context) => ChangePasswordScreen(userId: userId),
                   ),
                 );
               },

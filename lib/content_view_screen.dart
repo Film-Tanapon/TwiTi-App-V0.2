@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:convert';
 
 class ContentViewScreen extends StatefulWidget {
   const ContentViewScreen({super.key});
@@ -21,6 +23,60 @@ class _ContentViewScreenState extends State<ContentViewScreen> {
   final List<String> _mutedWords = [];
   final TextEditingController _mutedController = TextEditingController();
 
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  // โหลดการตั้งค่าจาก local storage
+  Future<void> _loadSettings() async {
+    // โหลด interests
+    String? interestsStr = await _storage.read(key: 'content_interests');
+    if (interestsStr != null) {
+      try {
+        Map<String, dynamic> interestsMap = json.decode(interestsStr);
+        setState(() {
+          interestsMap.forEach((key, value) {
+            if (_interests.containsKey(key)) {
+              _interests[key] = value as bool;
+            }
+          });
+        });
+      } catch (e) {
+        print('Error loading interests: $e');
+      }
+    }
+
+    // โหลด muted words
+    String? mutedWordsStr = await _storage.read(key: 'content_muted_words');
+    if (mutedWordsStr != null) {
+      try {
+        List<dynamic> wordsList = json.decode(mutedWordsStr);
+        setState(() {
+          _mutedWords.clear();
+          _mutedWords.addAll(wordsList.map((item) => item.toString()));
+        });
+      } catch (e) {
+        print('Error loading muted words: $e');
+      }
+    }
+  }
+
+  // บันทึก interests ลง local storage
+  Future<void> _saveInterests() async {
+    String interestsStr = json.encode(_interests);
+    await _storage.write(key: 'content_interests', value: interestsStr);
+  }
+
+  // บันทึก muted words ลง local storage
+  Future<void> _saveMutedWords() async {
+    String mutedWordsStr = json.encode(_mutedWords);
+    await _storage.write(key: 'content_muted_words', value: mutedWordsStr);
+  }
+
   // ส่งรายการความสนใจที่ติ๊กถูกไป Backend
   void _syncInterestsToBackend() {
     List<String> selected = _interests.entries
@@ -28,6 +84,7 @@ class _ContentViewScreenState extends State<ContentViewScreen> {
         .map((entry) => entry.key)
         .toList();
     print("ส่งข้อมูลความสนใจไป Backend: $selected");
+    _saveInterests(); // บันทึกการตั้งค่าลงเครื่อง
     // TODO: http.post('/api/interests', body: selected)
   }
 
@@ -39,6 +96,7 @@ class _ContentViewScreenState extends State<ContentViewScreen> {
         _mutedController.clear();
       });
       print("บันทึกคำที่บล็อก: $word");
+      _saveMutedWords(); // บันทึกการตั้งค่าลงเครื่อง
       // TODO: http.post('/api/muted-words', body: {'word': word})
     }
   }
@@ -48,6 +106,7 @@ class _ContentViewScreenState extends State<ContentViewScreen> {
       print("ลบคำที่บล็อก: ${_mutedWords[index]}");
       _mutedWords.removeAt(index);
     });
+    _saveMutedWords(); // บันทึกการตั้งค่าลงเครื่อง
     // TODO: http.delete('/api/muted-words/$index')
   }
 

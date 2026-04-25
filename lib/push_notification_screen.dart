@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class PushNotificationScreen extends StatefulWidget {
   const PushNotificationScreen({super.key});
@@ -15,6 +16,35 @@ class _PushNotificationScreenState extends State<PushNotificationScreen> {
   bool _messages = true;
 
   static const Color tweetyYellow = Color(0xFFFFF100);
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotificationSettings();
+  }
+
+  // โหลดการตั้งค่าจาก local storage
+  Future<void> _loadNotificationSettings() async {
+    String? mentionsStr = await _storage.read(key: 'push_mentions');
+    String? retweetsStr = await _storage.read(key: 'push_retweets');
+    String? likesStr = await _storage.read(key: 'push_likes');
+    String? messagesStr = await _storage.read(key: 'push_messages');
+
+    if (mounted) {
+      setState(() {
+        _mentions = mentionsStr == 'true';
+        _retweets = retweetsStr == 'true';
+        _likes = likesStr == 'true';
+        _messages = messagesStr == 'true';
+      });
+    }
+  }
+
+  // บันทึกการตั้งค่าลง local storage
+  Future<void> _saveSetting(String key, bool value) async {
+    await _storage.write(key: key, value: value.toString());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,21 +73,30 @@ class _PushNotificationScreenState extends State<PushNotificationScreen> {
               title: "Mentions and replies",
               subtitle: "When someone mentions you or replies to your tweet.",
               value: _mentions,
-              onChanged: (val) => setState(() => _mentions = val),
+              onChanged: (val) {
+                setState(() => _mentions = val);
+                _saveSetting('push_mentions', val);
+              },
             ),
             
             _buildSwitchTile(
               title: "Retweets",
               subtitle: "When someone retweets your content.",
               value: _retweets,
-              onChanged: (val) => setState(() => _retweets = val),
+              onChanged: (val) {
+                setState(() => _retweets = val);
+                _saveSetting('push_retweets', val);
+              },
             ),
             
             _buildSwitchTile(
               title: "Likes",
               subtitle: "When someone likes your tweets.",
               value: _likes,
-              onChanged: (val) => setState(() => _likes = val),
+              onChanged: (val) {
+                setState(() => _likes = val);
+                _saveSetting('push_likes', val);
+              },
             ),
             
             const Divider(),
@@ -66,7 +105,10 @@ class _PushNotificationScreenState extends State<PushNotificationScreen> {
               title: "Direct Messages",
               subtitle: "When someone sends you a message.",
               value: _messages,
-              onChanged: (val) => setState(() => _messages = val),
+              onChanged: (val) {
+                setState(() => _messages = val);
+                _saveSetting('push_messages', val);
+              },
             ),
           ],
         ),
